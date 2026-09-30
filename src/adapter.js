@@ -120,6 +120,7 @@ export function connectTaskPetState(ctx, widget, getProjection, observeEvents = 
 export function createPlugin(require, assets, css) {
   const React = require('react');
   const h = React.createElement;
+  let ctx;
 
   function TaskPetRoot({ useSessions, useSessionStatus }) {
     const element = React.useRef(null);
@@ -164,7 +165,8 @@ export function createPlugin(require, assets, css) {
 
   return {
     inject: ['slots', 'sessions', 'connection', 'locale', 'remote'],
-    apply(ctx) {
+    apply(c) {
+      ctx = c;
       ctx.slots.inject('shell.overlay', () => ctx.slots.register({
         name: 'shell.overlay', id: 'task-pet', order: 90,
       }, PetRoot));

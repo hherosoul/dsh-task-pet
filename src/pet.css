@@ -6,7 +6,7 @@
 --control-fill:light-dark(color-mix(in srgb,var(--control) 97%,var(--ink) 3%),color-mix(in srgb,var(--control) 90%,var(--ink) 10%));--control-hover:light-dark(color-mix(in srgb,var(--control) 95%,var(--ink) 5%),color-mix(in srgb,var(--control) 88%,var(--ink) 12%));--control-active:light-dark(color-mix(in srgb,var(--control) 93%,var(--ink) 7%),color-mix(in srgb,var(--control) 86%,var(--ink) 14%));--control-line:var(--dsw-alias-border-l2,light-dark(#0000001a,#ffffff1f));
 --menu-blur:var(--dsw-menu-backdrop-filter,blur(40px) saturate(150%));
 /* Robin warm bubble: soft cream surface with a warm ink line. */
---bubble-bg:light-dark(#fffaf0,#2c2a26);--bubble-ink:#4c3b2a;--bubble-line:light-dark(#e8dcc4,transparent);--bubble-shadow:light-dark(#6b4f2a1c,#0000002b);
+--bubble-bg:light-dark(#fffaf0,#2c2a26);--bubble-ink:light-dark(#4c3b2a,#f3e9d6);--bubble-line:light-dark(#e8dcc4,transparent);--bubble-shadow:light-dark(#6b4f2a1c,#0000002b);
 --robin-badge:light-dark(#e8853a,#f0a25c)}
 *{box-sizing:border-box}button,input,select{font:inherit}button{cursor:pointer}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:4px}[hidden]{display:none!important}
 .pet{position:fixed;width:156px;height:156px;pointer-events:none;isolation:isolate;user-select:none;-webkit-user-select:none;transform-origin:50% 100%}
