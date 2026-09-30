@@ -1,0 +1,173 @@
+import { TaskPetWidget } from './widget.js';
+import { normalizeLanguage } from './i18n.js';
+import { SessionsProbe } from './sessions-probe.js';
+import { SceneManager } from './scene-manager.js';
+import { jsonStorage } from './state.js';
+import { observeGlobalEvents } from './bridge-client.js';
+import { createSuggester } from './suggest.js';
+
+/** Only this file knows DSH's client contract. No private DOM/API routes. */
+export function readDshLanguage(locale) {
+  try { return normalizeLanguage(locale?.getSnapshot?.().active); } catch { return 'en'; }
+}
+
+export function observeDshLanguage(locale, onLanguage) {
+  let alive = true, previous;
+  const publish = () => {
+    if (!alive) return;
+    const next = readDshLanguage(locale);
+    if (next !== previous) { previous = next; onLanguage(next); }
+  };
+  const unsubscribe = locale?.subscribe?.(publish) || (() => {});
+  publish();
+  return () => { if (!alive) return; alive = false; unsubscribe(); };
+}
+
+/** Count running/pending MAIN sessions (subagents are internal, never the pet's
+ * "focus" signal) from the renderer's status map + session catalog. */
+export function statusCounts(statuses, catalog) {
+  let running = 0, pending = 0;
+  for (const [id, status] of statuses instanceof Map ? statuses : []) {
+    if (catalog?.byId?.[id]?.origin === 'subagent') continue;
+    const isRunning = typeof status?.running === 'boolean' ? status.running : catalog?.byId?.[id]?.running === true;
+    if (isRunning) running++;
+    if (status?.pendingInteraction != null) pending++;
+  }
+  return { running, pending };
+}
+
+function getLocalStorage() {
+  try { return window.localStorage; } catch { return null; }
+}
+
+/**
+ * Wire the pure scene machine to the live DSH client: the bridge feeds the
+ * tasks document (and session boundaries), the renderer's status hooks feed
+ * running/pending, and a 1s ticker keeps reminder windows / the pomodoro
+ * countdown fresh. Clicking the pet injects the scene prompt (clipboard
+ * fallback with a transient bubble).
+ */
+export function connectTaskPetState(ctx, widget, getProjection, observeEvents = observeGlobalEvents) {
+  const suggest = createSuggester(ctx);
+  const probe = new SessionsProbe();
+  const sceneManager = new SceneManager({ storage: jsonStorage(getLocalStorage() ?? { getItem: () => null, setItem: () => {} }) });
+  let alive = true;
+  let doc = null;
+  let error = null;
+  let clipboardNotice = null;
+  let pendingEvent = 'startup';
+  const now = () => Date.now();
+
+  const publish = () => {
+    if (!alive) return;
+    const projection = getProjection() || {};
+    probe.applyStatus(statusCounts(projection.statuses, projection.catalog));
+    const { running, pending } = probe.view();
+    const event = pendingEvent;
+    pendingEvent = null;
+    const view = sceneManager.update({ doc, error, sessionRunning: running, sessionPending: pending, event }, now());
+    if (clipboardNotice && now() < clipboardNotice.until && !view.bubble) {
+      view.bubble = { key: 'bubble.clipboard', params: {} };
+    }
+    widget.update(view);
+  };
+
+  const suggestText = (text) => {
+    const result = suggest(text);
+    if (result === 'clipboard') {
+      try { navigator.clipboard?.writeText(text); } catch { /* best effort */ }
+      clipboardNotice = { until: now() + 5000 };
+      publish();
+    }
+    // 'injected' and 'skipped' need no extra UI: the prompt is in the composer
+    // (or the user's unsent edit was left untouched, per arbiter ②).
+  };
+  widget.onSuggest = suggestText;
+
+  publish();
+
+  let stopEvents = () => {};
+  try {
+    stopEvents = observeEvents(ctx, {
+      onData(snapshot) {
+        if (snapshot) { doc = snapshot.doc ?? null; error = snapshot.error ?? null; }
+        publish();
+      },
+      onBoundary(event) {
+        probe.applyFrame(event);
+        pendingEvent = event.type;
+        publish();
+      },
+      onReset() { publish(); },
+      onHealth() {},
+    });
+  } catch { /* without a bridge the pet still shows the schedule scene */ }
+
+  const timer = setInterval(() => publish(), 1000);
+
+  return {
+    publish,
+    dispose() {
+      if (!alive) return;
+      alive = false;
+      clearInterval(timer);
+      try { stopEvents(); } catch { /* already stopped */ }
+    },
+  };
+}
+
+/** Mount the framework-independent widget into DSH's shell overlay. */
+export function createPlugin(require, assets, css) {
+  const React = require('react');
+  const h = React.createElement;
+
+  function TaskPetRoot({ useSessions, useSessionStatus }) {
+    const element = React.useRef(null);
+    const controller = React.useRef(null);
+    const latest = React.useRef({ catalog: null, statuses: null });
+    const catalog = useSessions((snapshot) => snapshot);
+    const statuses = useSessionStatus((map) => map);
+    latest.current = { catalog, statuses };
+
+    React.useEffect(() => {
+      const instance = new TaskPetWidget(element.current, {
+        assets, css,
+        language: readDshLanguage(ctx.locale),
+      });
+      const connection = connectTaskPetState(ctx, instance, () => latest.current);
+      controller.current = connection;
+      let stopLanguage = () => {};
+      try { stopLanguage = observeDshLanguage(ctx.locale, (lang) => instance.setLanguage(lang)); } catch { instance.setLanguage('en'); }
+      return () => {
+        stopLanguage();
+        connection.dispose();
+        if (controller.current === connection) controller.current = null;
+        instance.dispose();
+      };
+    }, []);
+
+    React.useEffect(() => { controller.current?.publish(); }, [catalog, statuses]);
+
+    return h('div', { ref: element, 'data-task-pet': 'connected' });
+  }
+
+  class Boundary extends React.Component {
+    constructor(props) { super(props); this.state = { failed: false }; }
+    static getDerivedStateFromError() { return { failed: true }; }
+    render() { return this.state.failed ? null : this.props.children; }
+  }
+
+  function PetRoot(props) {
+    const supported = typeof props.useSessions === 'function' && typeof props.useSessionStatus === 'function';
+    return h(Boundary, null, supported ? h(TaskPetRoot, props) : null);
+  }
+
+  return {
+    inject: ['slots', 'sessions', 'connection', 'locale', 'remote'],
+    apply(ctx) {
+      ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+        name: 'shell.overlay', id: 'task-pet', order: 90,
+      }, PetRoot));
+    },
+  };
+}

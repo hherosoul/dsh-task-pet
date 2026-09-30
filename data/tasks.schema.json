@@ -1,0 +1,173 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/…/dsh-task-pet/data/tasks.schema.json",
+  "title": "dsh-task-pet tasks.json",
+  "description": "Single source of truth for the task pet. The DSH agent is the ONLY writer (via the task_pet_write tool, or direct file writes validated against this schema). All times are ISO 8601 with timezone. Omitted fields use their \"default\". After completing a repeat task, the agent creates the next instance. Set settings.pomodoro.running_since to start the pomodoro; clear it to stop.",
+  "type": "object",
+  "properties": {
+    "tasks": {
+      "default": [],
+      "maxItems": 2000,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "due": {
+            "type": "string",
+            "maxLength": 40,
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}(?:[T ]\\d{2}:\\d{2}(?::\\d{2}(?:\\.\\d{1,3})?)?(?:Z|[+-]\\d{2}:?\\d{2})?)?$"
+          },
+          "remind_at": {
+            "default": [],
+            "maxItems": 16,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 40,
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}(?:[T ]\\d{2}:\\d{2}(?::\\d{2}(?:\\.\\d{1,3})?)?(?:Z|[+-]\\d{2}:?\\d{2})?)?$"
+            }
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "low",
+              "med",
+              "high"
+            ]
+          },
+          "status": {
+            "default": "pending",
+            "type": "string",
+            "enum": [
+              "pending",
+              "completed",
+              "deleted"
+            ]
+          },
+          "repeat": {
+            "type": "string",
+            "enum": [
+              "daily",
+              "weekdays",
+              "weekly",
+              "monthly",
+              "yearly"
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "maxLength": 40,
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}(?:[T ]\\d{2}:\\d{2}(?::\\d{2}(?:\\.\\d{1,3})?)?(?:Z|[+-]\\d{2}:?\\d{2})?)?$"
+          },
+          "completed_at": {
+            "type": "string",
+            "maxLength": 40,
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}(?:[T ]\\d{2}:\\d{2}(?::\\d{2}(?:\\.\\d{1,3})?)?(?:Z|[+-]\\d{2}:?\\d{2})?)?$"
+          }
+        },
+        "required": [
+          "id",
+          "title"
+        ]
+      }
+    },
+    "schedules": {
+      "default": [],
+      "maxItems": 2000,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "start": {
+            "type": "string",
+            "maxLength": 40,
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}(?:[T ]\\d{2}:\\d{2}(?::\\d{2}(?:\\.\\d{1,3})?)?(?:Z|[+-]\\d{2}:?\\d{2})?)?$"
+          },
+          "end": {
+            "type": "string",
+            "maxLength": 40,
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}(?:[T ]\\d{2}:\\d{2}(?::\\d{2}(?:\\.\\d{1,3})?)?(?:Z|[+-]\\d{2}:?\\d{2})?)?$"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "start",
+          "end"
+        ]
+      }
+    },
+    "settings": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "pet_name": {
+          "default": "知知",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "evening_time": {
+          "default": "18:30",
+          "type": "string",
+          "pattern": "^\\d{2}:\\d{2}$"
+        },
+        "pomodoro": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "work_min": {
+              "default": 25,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 240
+            },
+            "break_min": {
+              "default": 10,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 240
+            },
+            "running_since": {
+              "default": null,
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 40,
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}(?:[T ]\\d{2}:\\d{2}(?::\\d{2}(?:\\.\\d{1,3})?)?(?:Z|[+-]\\d{2}:?\\d{2})?)?$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

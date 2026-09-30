@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" aria-hidden="true">
+  <!-- Self-drawn geometric robin mark for dsh-task-pet (not copied artwork). -->
+  <defs>
+    <linearGradient id="breast" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f59e5b"/>
+      <stop offset="1" stop-color="#e2713a"/>
+    </linearGradient>
+  </defs>
+  <circle cx="32" cy="32" r="30" fill="#22304a"/>
+  <path d="M 12 38 Q 14 18 34 16 Q 52 14 54 32 Q 55 44 44 48 L 20 48 Q 12 46 12 38 Z" fill="#5b6f8f"/>
+  <path d="M 18 40 Q 20 26 34 25 Q 46 24 47 33 Q 48 42 38 44 L 24 44 Q 18 43 18 40 Z" fill="url(#breast)"/>
+  <circle cx="41" cy="27" r="2.2" fill="#101623"/>
+  <path d="M 48 27 L 56 29 L 48 31 Z" fill="#e8a13c"/>
+  <path d="M 24 15 Q 30 10 36 13 L 34 17 Q 29 15 25 18 Z" fill="#8a4b2d"/>
+</svg>
