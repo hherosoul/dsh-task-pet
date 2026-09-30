@@ -20,21 +20,33 @@ export function isToday(iso, nowMs, DateCtor = Date) {
   return ms !== null && dayKey(ms, DateCtor) === dayKey(nowMs, DateCtor);
 }
 
-/** Pending tasks with at least one remind_at at or before `nowMs`, earliest
- * first. Each entry carries the earliest DUE time (the bubble anchor). */
+/** Whether an agenda entry is already over: a task's `due` or a schedule's `end`
+ * has passed. Expired entries leave the badge and stop producing reminders — a
+ * reminder that could only be delivered after the thing already happened is
+ * noise, not help. Entries with no moment at all (an open todo) never expire. */
+export function isExpired(entry, nowMs) {
+  const moment = parseIso(entry?.end ?? entry?.due);
+  return moment !== null && moment < nowMs;
+}
+
+/** Every pending task's remind_at entry that is due at or before `nowMs`,
+ * earliest first. Each entry is its own reminder: a schedule carrying both
+ * "24 hours before" and "1 hour before" nudges twice, independently. (Reporting
+ * only the earliest entry per task, as an earlier revision did, silently
+ * swallowed every later reminder.) Expired tasks are skipped entirely. */
 export function dueReminders(doc, nowMs) {
   const due = [];
   for (const task of doc?.tasks ?? []) {
     if (task.status !== 'pending') continue;
+    if (isExpired(task, nowMs)) continue;
     for (const at of task.remind_at ?? []) {
       const ms = parseIso(at);
-      if (ms !== null && ms <= nowMs) {
-        due.push({ taskId: task.id, title: task.title, at, atMs: ms });
-        break;
-      }
+      if (ms !== null && ms <= nowMs) due.push({ taskId: task.id, title: task.title, at, atMs: ms });
     }
   }
-  return due.sort((a, b) => a.atMs - b.atMs || String(a.taskId).localeCompare(String(b.taskId)));
+  return due.sort(
+    (a, b) => a.atMs - b.atMs || String(a.taskId).localeCompare(String(b.taskId)) || String(a.at).localeCompare(String(b.at)),
+  );
 }
 
 /** {N} = 今日待办 + 日程数 (DESIGN §4). A pending task counts when it is due
@@ -98,3 +110,46 @@ export function pomodoroSegment(doc, nowMs) {
 
 /** Continuous-focus overtime threshold (scene 4 second trigger). */
 export const FOCUS_OVERTIME_MS = 50 * 60_000;
+
+/** How many rows the widget renders at most; anything past this is a hard bound
+ * on the DOM, while the window itself shows five rows and scrolls. */
+export const AGENDA_LIMIT = 50;
+
+/**
+ * The outstanding agenda behind the badge: every pending task that is not yet
+ * due plus every schedule that has not ended — "things still ahead of me", so
+ * the number shrinks by itself as their moments pass. Each item carries the
+ * moment that identifies it: a task's due time, else its next reminder; a
+ * schedule's start. Timeless tasks sort last, alphabetically.
+ */
+export function agendaItems(doc, nowMs, DateCtor = Date) {
+  const items = [];
+  for (const task of doc?.tasks ?? []) {
+    if (task.status !== 'pending') continue;
+    if (isExpired(task, nowMs)) continue;
+    const due = parseIso(task.due);
+    const nextReminder = (task.remind_at ?? [])
+      .map((at) => parseIso(at))
+      .filter((ms) => ms !== null && ms >= nowMs)
+      .sort((a, b) => a - b)[0] ?? null;
+    items.push({ id: String(task.id), title: String(task.title), kind: 'task', atMs: due ?? nextReminder ?? null });
+  }
+  for (const entry of doc?.schedules ?? []) {
+    if (isExpired(entry, nowMs)) continue;
+    items.push({ id: String(entry.id), title: String(entry.title), kind: 'schedule', atMs: parseIso(entry.start) });
+  }
+  return items.sort((a, b) => {
+    if (a.atMs === null && b.atMs === null) return a.title.localeCompare(b.title);
+    if (a.atMs === null) return 1;
+    if (b.atMs === null) return -1;
+    return a.atMs - b.atMs;
+  });
+}
+
+/** Local `M/D HH:mm` label for an agenda row: the list can span weeks, so the
+ * date matters as much as the clock time. */
+export function whenLabel(atMs, DateCtor = Date) {
+  if (atMs === null || !Number.isFinite(atMs)) return '';
+  const d = new DateCtor(atMs);
+  return `${d.getMonth() + 1}/${d.getDate()} ${hhmmOf(atMs)}`;
+}

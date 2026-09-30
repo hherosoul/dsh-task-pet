@@ -10,8 +10,11 @@ export function selectedSessionId(snapshot) {
 
 /** Interaction arbiter ② (DESIGN §4): inject only when the composer is empty or
  * still holds the exact text we last injected. A non-empty, different draft is
- * the user's unsent edit — silently skip and never overwrite it. */
-export function decideInjection(currentDraft, lastInjected) {
+ * the user's unsent edit — silently skip and never overwrite it.
+ * `force` is the one deliberate exception: an action the user confirmed in the
+ * pet's own UI ("详情" in the agenda) replaces the draft, whatever it holds. */
+export function decideInjection(currentDraft, lastInjected, force = false) {
+  if (force === true) return 'inject';
   const draft = typeof currentDraft === 'string' ? currentDraft : '';
   if (draft === '') return 'inject';
   if (draft === lastInjected) return 'inject';
@@ -31,7 +34,7 @@ function readDraft(input) {
 
 /**
  * Build a suggester bound to the DSH client context.
- * Returns `suggest(text)` -> 'injected' | 'skipped' | 'clipboard'.
+ * Returns `suggest(text, { force })` -> 'injected' | 'skipped' | 'clipboard'.
  * 'clipboard' means the composer path was unavailable (not injected, no main
  * session, or a thrown error) and the caller should copy to the clipboard.
  */
@@ -46,7 +49,7 @@ export function createSuggester(ctx) {
     }
   };
 
-  return function suggest(text) {
+  return function suggest(text, { force = false } = {}) {
     const sessionId = mainSessionId();
     if (!sessionId) return 'clipboard';
     try {
@@ -54,7 +57,7 @@ export function createSuggester(ctx) {
       const conversation = actx.get('conversation');
       const input = conversation.input.for(actx);
       const draft = readDraft(input);
-      if (decideInjection(draft, lastInjected) === 'skip') return 'skipped';
+      if (decideInjection(draft, lastInjected, force) === 'skip') return 'skipped';
       input.setDraft(text);
       lastInjected = text;
       if (typeof input.focus === 'function') input.focus();

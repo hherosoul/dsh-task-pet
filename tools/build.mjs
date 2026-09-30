@@ -95,4 +95,17 @@ const html = read('src/preview.html')
   .replace('/*__RUNTIME__*/', fs.readFileSync(path.join(root, 'preview/runtime.js'), 'utf8').replace(/<\/script/gi, '<\\/script'));
 fs.writeFileSync(path.join(root, 'preview/index.html'), html);
 
+// Fixed tutorial page: src/guide.html plus the pre-scaled scene thumbnails. It is
+// a static document — it only changes when the plugin's features do.
+let guide = read('src/guide.html').replaceAll('{{VERSION}}', version);
+for (const scene of Object.keys(SCENE_IMAGES)) {
+  const thumb = path.join(root, 'images', 'thumb', `${scene}.png`);
+  if (!fs.existsSync(thumb)) throw new Error(`missing guide thumbnail ${thumb} — regenerate images/thumb`);
+  guide = guide.replaceAll(`{{THUMB:${scene}}}`, `data:image/png;base64,${fs.readFileSync(thumb).toString('base64')}`);
+}
+if (/\{\{[A-Z]/.test(guide)) throw new Error('Unresolved placeholder in the guide page');
+fs.mkdirSync(path.join(root, 'guide'), { recursive: true });
+fs.writeFileSync(path.join(root, 'guide', 'index.html'), guide);
+
 console.log(`Built client bundle, host entry and offline preview (v${version}); inlined 6 scene PNGs.`);
+console.log('Built the fixed tutorial page (guide/index.html).');

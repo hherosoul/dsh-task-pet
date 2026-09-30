@@ -141,7 +141,7 @@
           "type": "object",
           "properties": {
             "work_min": {
-              "default": 25,
+              "default": 45,
               "type": "integer",
               "minimum": 1,
               "maximum": 240

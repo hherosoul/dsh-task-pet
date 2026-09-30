@@ -56,6 +56,11 @@ export function connectTaskPetState(ctx, widget, getProjection, observeEvents = 
   let error = null;
   let clipboardNotice = null;
   let pendingEvent = 'startup';
+  /** Latest view handed to the widget; the click handler reads its reminder. */
+  let currentView = null;
+  /** How long a user-requested scene preview outranks the scene machine. */
+  const PREVIEW_SCHEDULE_MS = 20_000;
+  let previewUntil = 0;
   const now = () => Date.now();
 
   const publish = () => {
@@ -69,20 +74,62 @@ export function connectTaskPetState(ctx, widget, getProjection, observeEvents = 
     if (clipboardNotice && now() < clipboardNotice.until && !view.bubble) {
       view.bubble = { key: 'bubble.clipboard', params: {} };
     }
+    // An explicitly requested preview wins over the ambient scene, but never over
+    // a live reminder nudge: that one is time-critical.
+    if (now() < previewUntil && view.scene !== 'task-reminder') {
+      view.scene = 'schedule';
+      view.bubble = null;
+      view.countdown = null;
+      view.prompt = { key: 'prompt.schedule', params: {} };
+    }
+    currentView = view;
     widget.update(view);
   };
 
-  const suggestText = (text) => {
-    const result = suggest(text);
+  const suggestText = (text, options = {}) => {
+    // Clicking the pet while a reminder is unhandled is the user looking at it:
+    // the nudge stops and the pet drops back to its companion scene, while the
+    // reminder's prompt sits in the composer.
+    const hadReminder = currentView?.reminder !== null && currentView?.reminder !== undefined;
+    if (hadReminder) sceneManager.acknowledge(now());
+    const result = suggest(text, options);
     if (result === 'clipboard') {
       try { navigator.clipboard?.writeText(text); } catch { /* best effort */ }
       clipboardNotice = { until: now() + 5000 };
-      publish();
     }
-    // 'injected' and 'skipped' need no extra UI: the prompt is in the composer
-    // (or the user's unsent edit was left untouched, per arbiter ②).
+    if (hadReminder || result === 'clipboard') publish();
+    // 'injected' and 'skipped' need no extra UI otherwise: the prompt is in the
+    // composer (or the user's unsent edit was left untouched, per arbiter ②).
   };
   widget.onSuggest = suggestText;
+  widget.onPreviewSchedule = () => {
+    previewUntil = now() + PREVIEW_SCHEDULE_MS;
+    publish();
+  };
+  // Opening the agenda is the user looking at the list: any reminder nudge it
+  // answers stops steering the pet's click prompt.
+  widget.onAgendaOpen = () => {
+    if (sceneManager.acknowledge(now())) publish();
+  };
+  /**
+   * Timer control is the one thing the pet writes itself — a narrow, user-initiated
+   * update of settings.pomodoro only. If that call cannot be made (older host, HTTP
+   * blocked), the click still lands as a prompt in the composer.
+   */
+  widget.onTogglePomodoro = (start, minutes = {}, fallback = '') => {
+    const body = start === true
+      ? { runningSince: new Date().toISOString(), workMin: minutes.workMin, breakMin: minutes.breakMin }
+      : { runningSince: null };
+    fetch('/task-pet/pomodoro', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-task-pet': '1' },
+      body: JSON.stringify(body),
+    }).then((response) => {
+      if (!response.ok) throw new Error(String(response.status));
+    }).catch(() => {
+      if (fallback !== '') suggestText(fallback, { force: true });
+    });
+  };
 
   publish();
 
@@ -120,6 +167,10 @@ export function connectTaskPetState(ctx, widget, getProjection, observeEvents = 
 export function createPlugin(require, assets, css) {
   const React = require('react');
   const h = React.createElement;
+  // The applied client context, captured for the slot component below: the
+  // component is instantiated long after apply() returns, so an apply() parameter
+  // is not in scope there. Referencing it throws inside render and the error
+  // boundary then renders nothing at all — no pet and no visible error.
   let ctx;
 
   function TaskPetRoot({ useSessions, useSessionStatus }) {
@@ -165,8 +216,8 @@ export function createPlugin(require, assets, css) {
 
   return {
     inject: ['slots', 'sessions', 'connection', 'locale', 'remote'],
-    apply(c) {
-      ctx = c;
+    apply(pluginCtx) {
+      ctx = pluginCtx;
       ctx.slots.inject('shell.overlay', () => ctx.slots.register({
         name: 'shell.overlay', id: 'task-pet', order: 90,
       }, PetRoot));

@@ -64,7 +64,7 @@ export const TASKS_DOCUMENT_SCHEMA = z.object({
       evening_time: hhmm.default('18:30'),
       pomodoro: z
         .object({
-          work_min: minutes.default(25),
+          work_min: minutes.default(45),
           break_min: minutes.default(10),
           running_since: isoString.nullable().default(null),
         })
@@ -75,8 +75,11 @@ export const TASKS_DOCUMENT_SCHEMA = z.object({
 
 /** Snapshot payload carried by baseline/data frames and the getData call. */
 export const TASKPET_DATA_SCHEMA = z.object({
-  /** File mtime in epoch ms; 0 when the file does not exist yet. */
-  mtime: z.number().int().min(0),
+  /** File mtime in epoch ms; 0 when the file does not exist yet. statSync
+   * reports sub-millisecond precision, so this is a finite non-negative number
+   * rather than a strict integer: requiring an int rejected every real snapshot
+   * and silently starved the pet of its document. */
+  mtime: z.number().finite().min(0),
   /** Last good (validated + defaulted) document. Empty document when none. */
   doc: TASKS_DOCUMENT_SCHEMA,
   /** Non-empty when the latest load failed (parse/validation); the plugin then

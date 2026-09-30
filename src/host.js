@@ -10,7 +10,7 @@
 // its own file tools against the documented schema). This host never writes
 // tasks.json on its own initiative; task_pet_write only executes on the
 // agent's explicit call. No transcript retention, no model calls, no network.
-import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, statSync, watch, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -24,8 +24,12 @@ export const name = 'task-pet';
 export const inject = ['agents', 'tools', 'webServer'];
 
 export const BRIDGE_QUEUE_LIMIT = 128;
-/** File polling cadence: the reminder ticker's twin loop on the host side. */
-export const POLL_INTERVAL_MS = 30_000;
+/** Safety-net poll: the file watcher below reports changes as they happen, so
+ * this is only a backstop for a write the watcher missed. It is deliberately
+ * long — a stat every 10 minutes costs nothing and the watcher carries the load. */
+export const POLL_INTERVAL_MS = 600_000;
+/** Poll cadence used when the file watcher could not be installed. */
+export const FALLBACK_POLL_MS = 30_000;
 
 /**
  * Deployment configuration. Every value that may differ between deployments is
@@ -41,7 +45,7 @@ export const Config = Schema.object({
     .min(1000)
     .max(3_600_000)
     .default(POLL_INTERVAL_MS)
-    .description('tasks.json mtime polling cadence in milliseconds.'),
+    .description('Safety-net interval for re-reading tasks.json; the file watcher reports changes immediately.'),
   bridgeQueueLimit: Schema.natural()
     .min(2)
     .max(1024)
@@ -54,6 +58,50 @@ function clampInt(value, min, max, fallback) {
   const n = Number(value);
   if (!Number.isFinite(n)) return fallback;
   return Math.max(min, Math.min(max, Math.trunc(n)));
+}
+
+/**
+ * Event-driven refresh on top of the safety-net poll. `writeFileAtomic` finishes
+ * with a rename, and watching the DIRECTORY catches that rename, so a write lands
+ * in the pet immediately instead of waiting for the next poll. Bursts are
+ * coalesced, and the whole thing is best-effort: when `watch` is unavailable the
+ * caller falls back to the short poll interval.
+ * @returns {{ active: boolean, dispose: () => void }}
+ */
+export function watchDataFile(file, notify, delayMs = 50) {
+  let watcher;
+  let timer;
+  const clear = () => {
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      timer = undefined;
+    }
+  };
+  const dispose = () => {
+    clear();
+    try {
+      watcher?.close();
+    } catch {
+      /* already closed */
+    }
+    watcher = undefined;
+  };
+  try {
+    watcher = watch(dirname(file), () => {
+      clear();
+      timer = setTimeout(() => {
+        timer = undefined;
+        notify();
+      }, delayMs);
+      timer.unref?.();
+    });
+    watcher.on?.('error', dispose);
+    watcher.unref?.();
+  } catch {
+    watcher = undefined;
+  }
+  if (watcher === undefined) return { active: false, dispose };
+  return { active: true, dispose };
 }
 
 /** Config with defaults + bounds applied defensively (unit-testable, pure). */
@@ -119,9 +167,12 @@ export class TaskDataStore {
     this.loadedOnce = false;
   }
 
-  /** Current snapshot (no I/O). */
+  /** Current snapshot (no I/O). `mtime` is floored to whole milliseconds: the
+   * bridge contract carries epoch milliseconds, while statSync keeps
+   * sub-millisecond precision that change detection still needs. Emitting the
+   * raw float made every frame fail client-side validation. */
   snapshot() {
-    return { mtime: this.mtime, doc: this.doc, error: this.error };
+    return { mtime: Math.floor(this.mtime), doc: this.doc, error: this.error };
   }
 
   /** Stat + (re)load when mtime changed; returns true when the snapshot changed. */
@@ -152,7 +203,26 @@ export class TaskDataStore {
   }
 
   /**
-   * Agent-initiated full-document write (the ONLY write path). Validates against
+   * Owner: the pet's own UI, on an explicit user action (the tomato button and
+   * the pomodoro settings). It is deliberately narrow — only `settings.pomodoro`
+   * changes; every other field is carried over from the current document — so it
+   * can never race the agent's full-document writes into losing your data.
+   */
+  writePomodoro({ runningSince = null, workMin, breakMin } = {}) {
+    const current = this.doc;
+    const pomodoro = { ...(current?.settings?.pomodoro ?? {}) };
+    pomodoro.running_since = typeof runningSince === 'string' && runningSince !== '' ? runningSince : null;
+    if (workMin !== undefined) pomodoro.work_min = clampInt(workMin, 1, 240, 45);
+    if (breakMin !== undefined) pomodoro.break_min = clampInt(breakMin, 1, 240, 10);
+    return this.write({
+      tasks: current?.tasks ?? [],
+      schedules: current?.schedules ?? [],
+      settings: { ...(current?.settings ?? {}), pomodoro },
+    });
+  }
+
+  /**
+   * Agent-initiated full-document write (the agent's write path). Validates against
    * the shared contract, writes atomically (preserving the raw document as the
    * agent supplied it), and refreshes the cache. Throws on invalid documents.
    */
@@ -396,6 +466,80 @@ export function makeImageRoutes(root) {
   return [{ kind: 'prefix', path: '/task-pet/images', handler: serve }];
 }
 
+/** Read a small JSON request body (capped, so a hostile caller cannot stream forever). */
+function readJsonBody(req, limit = 4096) {
+  return new Promise((resolve, reject) => {
+    let size = 0;
+    const chunks = [];
+    req.on('data', (chunk) => {
+      size += chunk.length;
+      if (size > limit) {
+        reject(new Error('body-too-large'));
+        req.destroy?.();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('end', () => {
+      try {
+        resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+      } catch (error) {
+        reject(error);
+      }
+    });
+    req.on('error', reject);
+  });
+}
+
+const sendJson = (res, code, payload) => {
+  res.writeHead(code, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+  res.end(JSON.stringify(payload));
+};
+
+/**
+ * POST /task-pet/pomodoro — start or stop the pomodoro from the pet's own UI.
+ * Loopback-guarded like the image routes, and gated behind a custom header: a
+ * cross-site page cannot set one without a preflight this host never answers, so
+ * no other local page can drive your timer.
+ */
+export function makePomodoroRoute(store, hub) {
+  const handler = async (req, res) => {
+    const problem = accessProblem(req);
+    if (problem !== undefined) {
+      sendJson(res, 403, { ok: false, error: problem });
+      return;
+    }
+    if (req.method !== 'POST') {
+      res.writeHead(405, { 'content-type': 'application/json', allow: 'POST' });
+      res.end(JSON.stringify({ ok: false, error: 'method-not-allowed' }));
+      return;
+    }
+    if (req.headers?.['x-task-pet'] !== '1') {
+      sendJson(res, 400, { ok: false, error: 'missing-client-header' });
+      return;
+    }
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: validationMessage(error) });
+      return;
+    }
+    try {
+      const snapshot = store.writePomodoro({
+        runningSince: body?.runningSince ?? null,
+        workMin: body?.workMin,
+        breakMin: body?.breakMin,
+      });
+      hub.pushData();
+      sendJson(res, 200, { ok: true, data: snapshot });
+    } catch (error) {
+      sendJson(res, 400, { ok: false, error: validationMessage(error) });
+    }
+  };
+  return [{ kind: 'prefix', path: '/task-pet/pomodoro', handler }];
+}
+
 /** The two agent-facing tools: the plugin's data access service (DESIGN §1.3). */
 export function makeDataTools({ store, hub, schemaPath }) {
   const readTool = defineTool({
@@ -432,8 +576,10 @@ export function makeDataTools({ store, hub, schemaPath }) {
     description:
       'Write the FULL task-pet document (the desk pet\'s single data source). Read with task_pet_read first, ' +
       'apply the user\'s requested change, then write the complete document back. Contract highlights: ' +
-      'times are ISO 8601 WITH timezone; task.remind_at drives the pet\'s reminder scene (fires within 30s of the ' +
-      'time while status is "pending"); completing a task sets status "completed" + completed_at, and for repeat ' +
+      'times are ISO 8601 WITH timezone; every task.remind_at entry is an INDEPENDENT reminder — the standing ' +
+      'rule for a schedule or meeting is TWO entries, 24 hours and 1 hour before it starts; a reminder only ' +
+      'nudges briefly and the user clears it by looking at the pet, so never use one to keep something on screen; ' +
+      'completing a task sets status "completed" + completed_at, and for repeat ' +
       'tasks you create the next instance yourself; settings.pomodoro.running_since (ISO timestamp) starts the ' +
       'pomodoro cycle, null stops it; settings.evening_time "HH:mm" (default 18:30) schedules the evening review. ' +
       'Never invent tasks the user did not ask for; the file is the user\'s data.',
@@ -512,22 +658,29 @@ export function apply(ctx, config = {}) {
   ctx.provide('taskPet', service);
   ctx.on('session/event', (session, event) => hub.accept(session, event), { global: true });
 
-  // mtime polling (skip parse when unchanged) — pushes data frames on change.
-  const timer = setInterval(() => hub.refreshAndPush(), pollIntervalMs);
+  // File changes ride the watcher; the interval is only a backstop (and the
+  // primary path when `watch` is unavailable in this runtime).
+  const changes = watchDataFile(store.file, () => hub.refreshAndPush());
+  const watchdogMs = changes.active ? pollIntervalMs : Math.min(pollIntervalMs, FALLBACK_POLL_MS);
+  const timer = setInterval(() => hub.refreshAndPush(), watchdogMs);
   timer.unref?.();
 
   const tools = makeDataTools({ store, hub, schemaPath: join(root, 'data', 'tasks.schema.json') });
   for (const tool of tools) ctx.tools.register(tool);
 
   ctx.effect(() => {
-    const disposers = makeImageRoutes(root).map((route) => ctx.webServer.register(route));
+    const disposers = [
+      ...makeImageRoutes(root),
+      ...makePomodoroRoute(store, hub),
+    ].map((route) => ctx.webServer.register(route));
     return () => {
       for (const dispose of disposers) dispose();
     };
-  }, 'task-pet: image routes');
+  }, 'task-pet: image routes and the pomodoro route');
   ctx.effect(
     () => () => {
       clearInterval(timer);
+      changes.dispose();
       hub.dispose();
     },
     'task-pet.hub',

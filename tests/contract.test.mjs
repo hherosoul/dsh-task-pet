@@ -40,6 +40,21 @@ test('TASKPET_FRAME_SCHEMA parses baseline/data frames and rejects malformed bou
   assert.throws(() => remote.TASKPET_FRAME_SCHEMA.parse({ type: 'turn/end', hostEpoch: 'e', streamSeq: 1, sessionId: 's', seq: 1, time: 0 }));
 });
 
+test('TASKPET_FRAME_SCHEMA accepts the host\'s sub-millisecond file mtime', () => {
+  // statSync().mtimeMs is fractional on APFS/ext4. An int-only schema rejected
+  // every real snapshot, so the client tore the stream down and retried forever
+  // while the pet kept rendering from a null document (0 done, night scene).
+  const frame = {
+    type: 'data', hostEpoch: 'e', streamSeq: 2,
+    data: { mtime: 1790772375468.1648, doc: remote.emptyTasksDocument(), error: null },
+  };
+  assert.equal(remote.TASKPET_FRAME_SCHEMA.parse(frame).data.mtime, 1790772375468.1648);
+  const negative = { ...frame, data: { ...frame.data, mtime: -1 } };
+  assert.throws(() => remote.TASKPET_FRAME_SCHEMA.parse(negative));
+  const notFinite = { ...frame, data: { ...frame.data, mtime: Number.NaN } };
+  assert.throws(() => remote.TASKPET_FRAME_SCHEMA.parse(notFinite));
+});
+
 test('data/tasks.schema.json mirrors the zod input schema exactly', () => {
   const jsonSchema = z.toJSONSchema(TASKS_DOCUMENT_SCHEMA, { io: 'input' });
   delete jsonSchema.$schema;

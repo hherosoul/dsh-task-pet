@@ -32,6 +32,6 @@
   "settings": {
     "pet_name": "知知",
     "evening_time": "18:30",
-    "pomodoro": { "work_min": 25, "break_min": 10, "running_since": null }
+    "pomodoro": { "work_min": 45, "break_min": 10, "running_since": null }
   }
 }

@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   resolveDshHome, validationMessage, writeFileAtomic, TaskDataStore,
-  accessProblem, SCENE_IMAGES, Config, resolveRuntimeConfig,
+  accessProblem, SCENE_IMAGES, Config, resolveRuntimeConfig, watchDataFile, POLL_INTERVAL_MS, makePomodoroRoute,
 } from '../src/host.js';
 
 test('resolveDshHome honors $DSH_HOME with ~ expansion and a home fallback', () => {
@@ -19,7 +19,7 @@ test('resolveDshHome honors $DSH_HOME with ~ expansion and a home fallback', () 
 test('Config is a schema that applies defaults and rejects out-of-range values', () => {
   const defaults = Config({});
   assert.equal(defaults.dataDir, '');
-  assert.equal(defaults.pollIntervalMs, 30_000);
+  assert.equal(defaults.pollIntervalMs, 600_000); // safety net only; the watcher carries changes
   assert.equal(defaults.bridgeQueueLimit, 128);
   assert.equal(Config({ dataDir: '/tmp/pet', pollIntervalMs: 5000 }).dataDir, '/tmp/pet');
   assert.throws(() => Config({ pollIntervalMs: 10 }));
@@ -28,13 +28,13 @@ test('Config is a schema that applies defaults and rejects out-of-range values',
 });
 
 test('resolveRuntimeConfig clamps and tolerates a partially invalid config', () => {
-  assert.deepEqual(resolveRuntimeConfig(), { dataDir: '', pollIntervalMs: 30_000, bridgeQueueLimit: 128 });
+  assert.deepEqual(resolveRuntimeConfig(), { dataDir: '', pollIntervalMs: POLL_INTERVAL_MS, bridgeQueueLimit: 128 });
   assert.equal(resolveRuntimeConfig({ dataDir: '  /tmp/x  ' }).dataDir, '/tmp/x');
   assert.equal(resolveRuntimeConfig({ pollIntervalMs: 10 }).pollIntervalMs, 1000);
   assert.equal(resolveRuntimeConfig({ pollIntervalMs: 9e9 }).pollIntervalMs, 3_600_000);
   assert.equal(resolveRuntimeConfig({ bridgeQueueLimit: 0 }).bridgeQueueLimit, 2);
   assert.equal(resolveRuntimeConfig({ bridgeQueueLimit: 4096 }).bridgeQueueLimit, 1024);
-  assert.equal(resolveRuntimeConfig({ pollIntervalMs: 'nonsense' }).pollIntervalMs, 30_000);
+  assert.equal(resolveRuntimeConfig({ pollIntervalMs: 'nonsense' }).pollIntervalMs, POLL_INTERVAL_MS);
 });
 
 test('validationMessage surfaces zod issues and plain errors', () => {
@@ -95,6 +95,123 @@ test('TaskDataStore.write validates and writes the full document', () => {
   assert.equal(snap.error, null);
   assert.ok(fs.existsSync(file));
   assert.throws(() => store.write({ tasks: [{ id: 'a' }] })); // missing title violates the contract
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('TaskDataStore emits a whole-millisecond mtime so bridge frames validate', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'taskpet-'));
+  const file = path.join(dir, 'tasks.json');
+  const store = new TaskDataStore(file);
+  fs.writeFileSync(file, JSON.stringify({ tasks: [] }));
+  assert.equal(store.refresh(), true);
+  // statSync keeps sub-millisecond precision; the snapshot contract (and every
+  // frame carrying it) does not, so a fractional mtime must never be emitted.
+  assert.ok(Number.isInteger(store.snapshot().mtime), `refresh mtime ${store.snapshot().mtime} must be an integer`);
+  const snap = store.write({ tasks: [], schedules: [], settings: {} });
+  assert.ok(Number.isInteger(snap.mtime), `write mtime ${snap.mtime} must be an integer`);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('watchDataFile reports a written file and stops on dispose', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'taskpet-watch-'));
+  const file = path.join(dir, 'tasks.json');
+  const seen = [];
+  const watch_ = watchDataFile(file, () => seen.push(Date.now()), 10);
+  try {
+    if (!watch_.active) return; // watch() unavailable here: the poll covers it
+    fs.writeFileSync(file, '{}');
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    assert.ok(seen.length > 0, 'a write must notify');
+    watch_.dispose();
+    const settled = seen.length;
+    fs.writeFileSync(file, '{"tasks":[]}');
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    assert.equal(seen.length, settled, 'a disposed watcher stays silent');
+  } finally {
+    watch_.dispose();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+function fakeReq({ method = 'POST', remoteAddress = '127.0.0.1', host = 'localhost:1', headers = {}, body = '' } = {}) {
+  const listeners = new Map();
+  const req = {
+    method,
+    socket: { remoteAddress, destroy() {} },
+    headers: { host, ...headers },
+    on(event, handle) {
+      if (!listeners.has(event)) listeners.set(event, []);
+      listeners.get(event).push(handle);
+      return req;
+    },
+  };
+  setTimeout(() => {
+    for (const handle of listeners.get('data') ?? []) handle(Buffer.from(body));
+    for (const handle of listeners.get('end') ?? []) handle();
+  }, 0);
+  return req;
+}
+
+function fakeRes() {
+  const res = { code: null, payload: '' };
+  res.writeHead = (code) => { res.code = code; return res; };
+  res.end = (data) => { res.payload += data ?? ''; return res; };
+  return res;
+}
+
+test('writePomodoro touches only the pomodoro block and clamps the minutes', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'taskpet-pomo-'));
+  const store = new TaskDataStore(path.join(dir, 'tasks.json'));
+  store.write({ tasks: [{ id: 't', title: '别动我', status: 'pending' }], schedules: [], settings: { pet_name: '知知' } });
+  store.writePomodoro({ runningSince: '2026-09-30T22:00:00+08:00', workMin: 999, breakMin: 0 });
+  let doc = store.snapshot().doc;
+  assert.equal(doc.settings.pomodoro.work_min, 240);
+  assert.equal(doc.settings.pomodoro.break_min, 1);
+  assert.equal(doc.settings.pomodoro.running_since, '2026-09-30T22:00:00+08:00');
+  assert.equal(doc.tasks[0].title, '别动我');
+  assert.equal(doc.settings.pet_name, '知知');
+  store.writePomodoro({ runningSince: null });
+  doc = store.snapshot().doc;
+  assert.equal(doc.settings.pomodoro.running_since, null);
+  assert.equal(doc.tasks.length, 1);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('the pomodoro route starts the timer and pushes a frame', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'taskpet-route-'));
+  const store = new TaskDataStore(path.join(dir, 'tasks.json'));
+  store.write({ tasks: [], schedules: [], settings: {} });
+  let pushes = 0;
+  const [route] = makePomodoroRoute(store, { pushData: () => { pushes += 1; } });
+  assert.equal(route.path, '/task-pet/pomodoro');
+  const res = fakeRes();
+  await route.handler(fakeReq({
+    headers: { 'x-task-pet': '1', 'content-type': 'application/json' },
+    body: JSON.stringify({ runningSince: '2026-09-30T22:30:00+08:00', workMin: 45, breakMin: 10 }),
+  }), res);
+  assert.equal(res.code, 200);
+  assert.equal(store.snapshot().doc.settings.pomodoro.work_min, 45);
+  assert.equal(store.snapshot().doc.settings.pomodoro.running_since, '2026-09-30T22:30:00+08:00');
+  assert.equal(pushes, 1);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('the pomodoro route refuses other origins, methods and callers', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'taskpet-route2-'));
+  const store = new TaskDataStore(path.join(dir, 'tasks.json'));
+  const [route] = makePomodoroRoute(store, { pushData: () => {} });
+  const cases = [
+    ['non-loopback', fakeReq({ remoteAddress: '8.8.8.8', headers: { 'x-task-pet': '1' } }), 403],
+    ['foreign host', fakeReq({ host: 'evil.example', headers: { 'x-task-pet': '1' } }), 403],
+    ['GET', fakeReq({ method: 'GET', headers: { 'x-task-pet': '1' } }), 405],
+    ['no client header', fakeReq({ body: '{}' }), 400],
+  ];
+  for (const [label, req, code] of cases) {
+    const res = fakeRes();
+    await route.handler(req, res);
+    assert.equal(res.code, code, label);
+  }
+  assert.equal(store.snapshot().mtime, 0, 'nothing was written');
   fs.rmSync(dir, { recursive: true, force: true });
 });
 

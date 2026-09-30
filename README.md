@@ -71,6 +71,19 @@ dsh web --profile demo --no-open      # 去掉 --no-open 让浏览器自动打�
 
 完整 schema 见 [data/tasks.schema.json](data/tasks.schema.json)，示例见 [data/tasks.example.json](data/tasks.example.json)。
 
+## 番茄钟
+
+- 小鸟**右下角的番茄图标**：点一下直接用当前设置开始计时（默认 45 / 10 分钟），正在计时时点一下停止。
+- 这是插件唯一的写入路径，且是**窄写入**：只改 `settings.pomodoro`（`POST /task-pet/pomodoro`，仅回环 + 自定义请求头），其余字段原样保留；数据语义的写入方仍然是 agent。
+- 改时长走提示词：右键 →「番茄设置」→ 填充分钟数 → 确认 → 提示词进主输入框 → 由 agent 落盘。
+
+## 使用教程页（固定文档）
+
+`guide/index.html` 是随包发布的**固定教程页**：自包含（六张场景缩略图已内联，无网络依赖），由 `src/guide.html` + `images/thumb/*.png` 在 `npm run build` 时生成。
+
+- 桌宠右键 →「使用教程」会把提示词 `打开知更鸟桌宠的使用教程：直接展示插件里固定的 guide/index.html，不要重新生成` 填入主对话框，用户发送后由 agent **直接展示这个文件**。
+- **不要每次重新生成它**：内容只随插件功能变化而修改——改 `src/guide.html`（或 `images/thumb/`），然后重新构建即可。
+
 ## 六场景
 
 | 场景 | 触发 | 点击注入的提示词 |

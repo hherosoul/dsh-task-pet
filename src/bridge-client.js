@@ -1,5 +1,23 @@
 import * as TaskPetContract from '../lib/remote.js';
 
+/** Last rejected-frame detail, so a permanent contract mismatch is reported
+ * once per distinct cause instead of vanishing into the retry loop. A frame
+ * that fails contract validation is still fail-closed (the stream is torn down
+ * and retried), but it can no longer look like a healthy but frozen pet. */
+let lastFrameRejection = null;
+function warnFrameRejection(error) {
+  const detail = Array.isArray(error?.issues)
+    ? error.issues.map((issue) => `${issue.path?.join('.') || '(root)'}: ${issue.message}`).join('; ')
+    : String(error?.message ?? error);
+  if (detail === lastFrameRejection) return;
+  lastFrameRejection = detail;
+  try {
+    console.warn(`[dsh-task-pet] bridge frame rejected (pet keeps the last snapshot): ${detail}`);
+  } catch {
+    /* a missing console must never break the pet */
+  }
+}
+
 // Shared only for overlapping mounts of this widget; never duplicate a Remote method.
 const taskPetRemoteMounts = new WeakMap();
 function acquireTaskPetRemote(ctx, remote) {
@@ -131,7 +149,13 @@ export function observeGlobalEvents(ctx, { onBoundary, onData, onReset, onHealth
         current.handle = current.scope.service.watch(current.abort.signal);
         for await (const value of current.handle) {
           if (!active()) return;
-          const frame = TaskPetContract.TASKPET_FRAME_SCHEMA.parse(value);
+          let frame;
+          try {
+            frame = TaskPetContract.TASKPET_FRAME_SCHEMA.parse(value);
+          } catch (error) {
+            warnFrameRejection(error);
+            throw error;
+          }
           if (frame.type === 'baseline') {
             epoch = frame.hostEpoch;
             watermark = frame.streamSeq;
