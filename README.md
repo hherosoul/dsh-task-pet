@@ -8,7 +8,7 @@
 
 - **六场景自动切换**：晨间规划、任务提醒、专注陪伴、休息提醒、日程预览（默认）、晚间复盘。
 - **提醒与番茄钟**：`remind_at` 到期触发「任务提醒」场景（优先级最高）；`settings.pomodoro` 驱动专注/休息倒计时。
-- **数据单一真相源**：桌宠只读 `data/tasks.json`，唯一写入方是 DSH agent（通过 `task_pet_read` / `task_pet_write` 工具或对 schema 的直接文件写入）。
+- **数据单一真相源**：`data/tasks.json` 由 DSH agent 写入（`task_pet_read` / `task_pet_write` 或按 schema 直接写文件）。唯一的例外是番茄钟的运行状态：你在桌宠上点番茄时，host 走一条窄写入路径只改 `settings.pomodoro`，其余字段原样保留。
 - **提示词注入**：点击桌宠把场景提示词写入 DSH 输入框草稿，不自动发送。
 - 拖拽 / 缩放 / 隐藏，中英双语，亮暗主题，减少动效支持。
 
