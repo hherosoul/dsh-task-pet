@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { SceneManager, memoryStorage, SCENES, REMINDER_HOLD_MS } from '../src/scene-manager.js';
 import { hhmmOf } from '../src/tasks-model.js';
+import { createTranslator } from '../src/i18n.js';
 
 const local = (y, mo, d, h, mi, s = 0) => new Date(y, mo - 1, d, h, mi, s, 0).getTime();
 const iso = (ms) => new Date(ms).toISOString();
@@ -60,7 +61,9 @@ test('a due reminder outranks everything and wins the click prompt', () => {
   assert.equal(view.scene, 'task-reminder');
   assert.equal(view.badge, 3); // the agenda count is independent of the nudge
   assert.equal(view.bounce, true);
-  assert.equal(view.bubble.key, 'bubble.reminder');
+  // The bubble names the thing's own moment (18:00), not the nudge's clock time.
+  assert.equal(view.bubble.key, 'bubble.reminderToday');
+  assert.equal(view.bubble.params.time, '18:00');
   assert.equal(view.bubble.params.task, '提交周报');
   assert.equal(view.prompt.key, 'prompt.reminder');
   assert.equal(view.prompt.params.task, '提交周报');
@@ -69,7 +72,7 @@ test('a due reminder outranks everything and wins the click prompt', () => {
 test('a reminder is a nudge: the pose holds, then the companion scene returns', () => {
   const m = new SceneManager({ storage: memoryStorage() });
   const fire = local(2026, 9, 30, 10, 5);
-  assert.equal(m.update(input(), fire).bubble.key, 'bubble.reminder');
+  assert.equal(m.update(input(), fire).bubble.key, 'bubble.reminderToday');
   const holding = m.update(input(), fire + 15_000);
   assert.equal(holding.scene, 'task-reminder');
   assert.equal(holding.bubble, null);
@@ -165,13 +168,17 @@ test('each remind_at entry nudges on its own (24h before and 1h before)', () => 
     schedules: [],
     settings: {},
   };
+  const zh = createTranslator('zh');
   const m = new SceneManager({ storage: memoryStorage() });
 
-  // The 24-hour heads-up.
+  // The 24-hour heads-up talks about tomorrow, at the meeting's own time — never
+  // "10:00 了", which would read as if the meeting were today.
   const early = m.update(input({ doc }), dayBefore + 1);
   assert.equal(early.scene, 'task-reminder');
   assert.equal(early.badge, 1); // the meeting is on the agenda
-  assert.equal(early.bubble.params.time, hhmmOf(dayBefore));
+  assert.equal(early.bubble.key, 'bubble.reminderTomorrow');
+  assert.equal(early.bubble.params.time, hhmmOf(event));
+  assert.equal(zh(early.bubble.key, early.bubble.params), '啾！明天 10:00 有产品评审会');
   m.acknowledge(dayBefore + 2);
   const answered = m.update(input({ doc }), dayBefore + 3);
   assert.equal(answered.reminder, null); // the nudge is answered...
@@ -183,7 +190,9 @@ test('each remind_at entry nudges on its own (24h before and 1h before)', () => 
   assert.equal(late.scene, 'task-reminder');
   assert.equal(late.badge, 1);
   assert.equal(late.reminder.title, '产品评审会');
-  assert.equal(late.bubble.params.time, hhmmOf(hourBefore));
+  assert.equal(late.bubble.key, 'bubble.reminderToday');
+  assert.equal(late.bubble.params.time, hhmmOf(event));
+  assert.equal(zh(late.bubble.key, late.bubble.params), '啾！今天 10:00 有产品评审会');
 });
 
 test('pomodoro work phase shows focus with a countdown', () => {

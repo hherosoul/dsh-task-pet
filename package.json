@@ -1,6 +1,6 @@
 {
   "name": "dsh-task-pet",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "dsh-task-pet: robin daily-task desk pet for DeepSeek Harness (six scenes, reminder scheduling, pomodoro, prompt injection)",
   "type": "module",
   "license": "MIT",

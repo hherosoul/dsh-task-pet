@@ -6,7 +6,7 @@
  * (fired-reminder log, daily flags, continuous-focus anchor) — never the
  * tasks document itself (DESIGN §5).
  */
-import { AGENDA_LIMIT, agendaItems, completedTodayCount, dayKey, dueReminders, eveningFloorMs, eveningTimeMs, FOCUS_OVERTIME_MS, hhmmOf, pomodoroSegment, todayCount, whenLabel } from './tasks-model.js';
+import { AGENDA_LIMIT, agendaItems, completedTodayCount, dayKey, daysFromToday, dueReminders, eveningFloorMs, eveningTimeMs, FOCUS_OVERTIME_MS, hhmmOf, isSameDay, monthDayLabel, pomodoroSegment, todayCount, whenLabel } from './tasks-model.js';
 
 export const SCENES = Object.freeze(['morning', 'task-reminder', 'focus', 'break', 'schedule', 'evening']);
 /** Morning scene auto-degrades to standby after this long. */
@@ -45,6 +45,29 @@ export function memoryStorage() {
 
 const STATE_KEY = 'scene:v1';
 const reminderKey = (reminder) => `${reminder.taskId}|${reminder.at}`;
+
+/**
+ * What the pet says when a reminder fires. It announces the thing on its own day
+ * and at its own time — a nudge 24 hours ahead of tomorrow's meeting says
+ * "明天 14:00 有客户沟通", because "14:00 了" would read as if the meeting were
+ * today. A todo that only carries a reminder has no moment of its own, so there
+ * the reminder time *is* the thing and the nudge wording stays.
+ */
+function reminderBubble(reminder, now) {
+  const dueMs = reminder.dueMs ?? null;
+  if (dueMs === null) {
+    const time = hhmmOf(reminder.atMs);
+    const params = { time, task: reminder.title };
+    return now - reminder.atMs > REMINDER_LATE_MS
+      ? { key: 'bubble.reminderLate', params }
+      : { key: 'bubble.reminder', params };
+  }
+  const params = { time: hhmmOf(dueMs), task: reminder.title };
+  if (isSameDay(dueMs, now)) return { key: 'bubble.reminderToday', params };
+  const days = daysFromToday(dueMs, now);
+  if (days === 1) return { key: 'bubble.reminderTomorrow', params };
+  return { key: 'bubble.reminderAhead', params: { ...params, date: monthDayLabel(dueMs) } };
+}
 
 function cleanState(stored) {
   const source = stored && typeof stored === 'object' ? stored : {};
@@ -198,11 +221,7 @@ export class SceneManager {
       if (live.length > 1) {
         bubble = { key: 'bubble.missed', params: { count: live.length } };
       } else if (live.length === 1) {
-        const { reminder } = live[0];
-        bubble =
-          now - reminder.atMs > REMINDER_LATE_MS
-            ? { key: 'bubble.reminderLate', params: { time: hhmmOf(reminder.atMs), task: reminder.title } }
-            : { key: 'bubble.reminder', params: { time: hhmmOf(reminder.atMs), task: reminder.title } };
+        bubble = reminderBubble(live[0].reminder, now);
       }
     } else if (seg !== null && seg.phase === 'break') {
       scene = 'break';

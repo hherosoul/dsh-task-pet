@@ -37,15 +37,19 @@ export function isExpired(entry, nowMs) {
  * earliest first. Each entry is its own reminder: a schedule carrying both
  * "24 hours before" and "1 hour before" nudges twice, independently. (Reporting
  * only the earliest entry per task, as an earlier revision did, silently
- * swallowed every later reminder.) Expired tasks are skipped entirely. */
+ * swallowed every later reminder.) Expired tasks are skipped entirely — a nudge
+ * that could only arrive after the thing already happened is noise, not help.
+ * Each reminder carries `dueMs`, the moment of the thing itself (null for a
+ * reminder-only todo), so the bubble can name the day the thing is on. */
 export function dueReminders(doc, nowMs) {
   const due = [];
   for (const task of doc?.tasks ?? []) {
     if (task.status !== 'pending') continue;
     if (isExpired(task, nowMs)) continue;
+    const dueMs = parseIso(task.due);
     for (const at of task.remind_at ?? []) {
       const ms = parseIso(at);
-      if (ms !== null && ms <= nowMs) due.push({ taskId: task.id, title: task.title, at, atMs: ms });
+      if (ms !== null && ms <= nowMs) due.push({ taskId: task.id, title: task.title, at, atMs: ms, dueMs });
     }
   }
   return due.sort(
@@ -167,10 +171,29 @@ export function agendaItems(doc, nowMs, DateCtor = Date) {
   });
 }
 
+/** Local midnight of a moment, for day-granularity differences. */
+export function startOfDay(ms) {
+  const d = new Date(ms);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+/** Whole local days from `nowMs`'s day to `ms`'s day (1 = tomorrow). */
+export function daysFromToday(ms, nowMs) {
+  return Math.round((startOfDay(ms) - startOfDay(nowMs)) / 86_400_000);
+}
+
+/** Local `M/D` label — the "which day" half of whenLabel, for bubbles that name
+ * a day and then a time ("10/3 10:00"). */
+export function monthDayLabel(ms, DateCtor = Date) {
+  if (!Number.isFinite(ms)) return '';
+  const d = new DateCtor(ms);
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
+
 /** Local `M/D HH:mm` label for an agenda row: the list can span weeks, so the
  * date matters as much as the clock time. */
 export function whenLabel(atMs, DateCtor = Date) {
   if (atMs === null || !Number.isFinite(atMs)) return '';
-  const d = new DateCtor(atMs);
-  return `${d.getMonth() + 1}/${d.getDate()} ${hhmmOf(atMs)}`;
+  return `${monthDayLabel(atMs, DateCtor)} ${hhmmOf(atMs)}`;
 }

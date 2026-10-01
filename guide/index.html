@@ -45,7 +45,7 @@ footer{margin-top:56px;padding-top:20px;border-top:1px solid var(--line);color:v
 <body><div class="wrap">
 <header class="top">
   <div class="brand"><span>🐦</span>知更鸟 <small style="color:var(--muted);font-weight:500">TASK COMPANION</small></div>
-  <div class="tag">v1.0.2 · 固定文档</div>
+  <div class="tag">v1.0.3 · 固定文档</div>
 </header>
 
 <h1>知更鸟使用教程<em>。</em></h1>
@@ -81,6 +81,7 @@ footer{margin-top:56px;padding-top:20px;border-top:1px solid var(--line);color:v
   <p class="sub">HOW REMINDERS WORK</p>
   <div class="card"><ul class="timeline">
     <li><b>时间来自数据</b><span>每条提醒都是任务数据里的一个时间戳（ISO 8601 带时区）。一天中的日程默认写两条：<strong>提前 24 小时</strong>和<strong>提前 1 小时</strong>，各自独立触发。</span></li>
+    <li><b>说的是事情本身</b><span>气泡报的是<strong>那件事</strong>的时刻和它所在的那一天，不是你收到提醒的钟点：明天 14:00 的会，提前 24 小时的提醒会说「<strong>明天</strong> 14:00 有客户沟通」，不会说成今天 14:00。</span></li>
     <li><b>1 秒精度</b><span>App 开着时，桌宠每秒比对一次时间，到点 1 秒内响。</span></li>
     <li><b>没开也补</b><span>App 关着、电脑睡了、长时间离线——到点的提醒会在下次启动时补一次，并如实说明「已经过时间了」。</span></li>
     <li><b>过时不补</b><span>已经过了任务 <code>due</code> / 日程 <code>end</code> 的事不再补提醒，也不再重复催促。</span></li>
@@ -96,7 +97,7 @@ footer{margin-top:56px;padding-top:20px;border-top:1px solid var(--line);color:v
       <tr><th>数字是什么</th><td><strong>还没过时</strong>的条目数：任务 <code>due</code> 未过、日程 <code>end</code> 未过。和"今天"无关——加了下周的日程，数字现在就 +1。</td></tr>
       <tr><th>什么时候变小</th><td>时刻一过自动减掉，同时该条不再产生提醒；把事标成完成也会立刻减。</td></tr>
       <tr><th>点开是什么</th><td>日程列表：时间（带月/日）、标题、是待办还是日程。最多显示 5 条，超出滚动。</td></tr>
-      <tr><th>底部的「详情」</th><td>先请你确认，确认后把整段预览提示词填入主输入框<strong>并覆盖原有内容</strong>——这是唯一会覆盖你输入的情况。过去一个月及更早的明细，由 agent 在主对话里展开。</td></tr>
+      <tr><th>底部的「详情」</th><td>先请你确认，确认后把整段预览提示词填入主输入框<strong>并覆盖原有内容</strong>——这是唯一会覆盖你输入的情况。角标和列表只有<strong>还没过时</strong>的条目；<strong>过去一个月</strong>（含已过期、已完成）和全部未来事件都由 agent 在这次预览里展开，并逐条标注「待办 / 过期」。</td></tr>
     </table>
   </div>
 </section>
@@ -136,7 +137,7 @@ footer{margin-top:56px;padding-top:20px;border-top:1px solid var(--line);color:v
 </section>
 
 <footer>
-  <span>知更鸟 · dsh-task-pet v1.0.2｜本页是固定文档，只有插件功能更新时才需要修改。</span>
+  <span>知更鸟 · dsh-task-pet v1.0.3｜本页是固定文档，只有插件功能更新时才需要修改。</span>
   <span>主对话里说「看使用教程」即可再次调出。</span>
 </footer>
 </div></body></html>
