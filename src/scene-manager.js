@@ -6,7 +6,7 @@
  * (fired-reminder log, daily flags, continuous-focus anchor) — never the
  * tasks document itself (DESIGN §5).
  */
-import { AGENDA_LIMIT, agendaItems, completedTodayCount, dayKey, daysFromToday, dueReminders, eveningFloorMs, eveningTimeMs, FOCUS_OVERTIME_MS, hhmmOf, isSameDay, monthDayLabel, pomodoroSegment, todayCount, whenLabel } from './tasks-model.js';
+import { AGENDA_LIMIT, agendaItems, dayKey, daysFromToday, dueReminders, eveningFloorMs, eveningTimeMs, FOCUS_OVERTIME_MS, hhmmOf, isSameDay, monthDayLabel, pomodoroSegment, todayCount, whenLabel } from './tasks-model.js';
 
 export const SCENES = Object.freeze(['morning', 'task-reminder', 'focus', 'break', 'schedule', 'evening']);
 /** Morning scene auto-degrades to standby after this long. */
@@ -83,6 +83,8 @@ function cleanState(stored) {
     morningUntil: Number.isFinite(source.morningUntil) ? source.morningUntil : 0,
     eveningDate: typeof source.eveningDate === 'string' ? source.eveningDate : null,
     lastTurnDate: typeof source.lastTurnDate === 'string' ? source.lastTurnDate : null,
+    doneDate: typeof source.doneDate === 'string' ? source.doneDate : null,
+    doneTurns: Number.isFinite(source.doneTurns) && source.doneTurns > 0 ? Math.floor(source.doneTurns) : 0,
     focusSince: Number.isFinite(source.focusSince) ? source.focusSince : null,
     errorShown: typeof source.errorShown === 'string' ? source.errorShown : null,
     errorAt: Number.isFinite(source.errorAt) ? source.errorAt : 0,
@@ -124,8 +126,10 @@ export class SceneManager {
 
   /**
    * Advance the machine.
-   * @param {object} input - { doc, error, sessionRunning, sessionPending, event }
+   * @param {object} input - { doc, error, sessionRunning, sessionPending, event, internal }
    *   event: 'startup' | 'turn-start' | 'turn-end' | null (what caused this update)
+   *   internal: true when the boundary came from a subagent, which never counts as
+   *   one of the user's finished conversations
    * @param {number} now - injected clock.
    */
   update(input, now = Date.now()) {
@@ -155,6 +159,16 @@ export class SceneManager {
     // The day's first completed turn means work has begun: degrade morning.
     if (event === 'turn-end' && s.morningDate === today) s.morningUntil = Math.min(s.morningUntil, now);
     if (event === 'turn-start') s.lastTurnDate = today;
+
+    // "Finished today" is what the user actually got done in DSH — one finished
+    // conversation turn each — and never the task document (DESIGN §4). A subagent
+    // turn is internal machinery, not one of the user's conversations. This is
+    // client-local bookkeeping (DESIGN §5): it survives a reload, and a day the app
+    // was never open simply starts from zero.
+    if (event === 'turn-end' && input.internal !== true) {
+      if (s.doneDate !== today) { s.doneDate = today; s.doneTurns = 0; }
+      s.doneTurns += 1;
+    }
 
     // Evening review: the configured time, or all sessions ended after 17:00.
     const running = input.sessionRunning === true;
@@ -246,7 +260,7 @@ export class SceneManager {
       } else scene = 'focus';
     } else if (s.eveningDate === dayKey(now)) {
       scene = 'evening';
-      const count = doc ? completedTodayCount(doc, now) : 0;
+      const count = s.doneDate === dayKey(now) ? s.doneTurns : 0;
       bubble = { key: 'bubble.evening', params: { count } };
     } else if (s.morningDate === dayKey(now) && now < s.morningUntil) {
       scene = 'morning';

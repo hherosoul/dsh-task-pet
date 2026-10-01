@@ -89,11 +89,6 @@ export function todayCount(doc, nowMs, DateCtor = Date) {
   return tasks + schedules;
 }
 
-/** {K} = 今日完成数: tasks completed today by completed_at (local day). */
-export function completedTodayCount(doc, nowMs, DateCtor = Date) {
-  return (doc?.tasks ?? []).filter((task) => task.status === 'completed' && task.completed_at && isToday(task.completed_at, nowMs, DateCtor)).length;
-}
-
 /** Today's local wall-clock moment for settings.evening_time ("HH:mm"). */
 export function eveningTimeMs(doc, nowMs) {
   const hhmm = /^(\d{2}):(\d{2})$/.exec(doc?.settings?.evening_time ?? '');

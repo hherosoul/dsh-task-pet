@@ -56,6 +56,8 @@ export function connectTaskPetState(ctx, widget, getProjection, observeEvents = 
   let error = null;
   let clipboardNotice = null;
   let pendingEvent = 'startup';
+  /** Whether the pending boundary came from a subagent (never the user's own turn). */
+  let pendingInternal = false;
   /** Latest view handed to the widget; the click handler reads its reminder. */
   let currentView = null;
   /** How long a user-requested scene preview outranks the scene machine. */
@@ -69,8 +71,10 @@ export function connectTaskPetState(ctx, widget, getProjection, observeEvents = 
     probe.applyStatus(statusCounts(projection.statuses, projection.catalog));
     const { running, pending } = probe.view();
     const event = pendingEvent;
+    const internal = pendingInternal;
     pendingEvent = null;
-    const view = sceneManager.update({ doc, error, sessionRunning: running, sessionPending: pending, event }, now());
+    pendingInternal = false;
+    const view = sceneManager.update({ doc, error, sessionRunning: running, sessionPending: pending, event, internal }, now());
     if (clipboardNotice && now() < clipboardNotice.until && !view.bubble) {
       view.bubble = { key: 'bubble.clipboard', params: {} };
     }
@@ -143,6 +147,7 @@ export function connectTaskPetState(ctx, widget, getProjection, observeEvents = 
       onBoundary(event) {
         probe.applyFrame(event);
         pendingEvent = event.type;
+        pendingInternal = event.isSubagent === true;
         publish();
       },
       onReset() { publish(); },

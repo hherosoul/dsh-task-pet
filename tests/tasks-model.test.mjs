@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  dayKey, isToday, dueReminders, todayCount, completedTodayCount,
+  dayKey, isToday, dueReminders, todayCount,
   eveningTimeMs, eveningFloorMs, hhmmOf, pomodoroSegment, FOCUS_OVERTIME_MS,
   agendaItems, whenLabel, isExpired,
 } from '../src/tasks-model.js';
@@ -118,7 +118,6 @@ test('todayCount counts what the agenda still shows today', () => {
     ],
   };
   assert.equal(todayCount(doc, now), 3); // a, b, s1 — e's own moment has already gone
-  assert.equal(completedTodayCount(doc, now), 1);
 });
 
 test('todayCount never disagrees with the agenda it is spoken from', () => {

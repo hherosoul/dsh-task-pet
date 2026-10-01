@@ -248,13 +248,38 @@ test('a running session shows focus; 50 minutes of continuous focus shows break'
   assert.equal(overtime.bubble.key, 'bubble.break');
 });
 
-test('evening review triggers after evening_time with the completed count', () => {
-  const quiet = { tasks: [{ id: 't1', title: 'done', status: 'completed', completed_at: iso(local(2026, 9, 30, 9, 0)) }], schedules: [], settings: { evening_time: '18:30' } };
+test('evening review counts the day\'s finished conversations, not the task file', () => {
+  // A task marked completed today in the data file is an agenda item, not work the
+  // user did in DSH: it must not show up in the evening tally.
+  const doc = { tasks: [{ id: 't1', title: '日程里的条目', status: 'completed', completed_at: iso(local(2026, 9, 30, 9, 0)) }], schedules: [], settings: { evening_time: '18:30' } };
   const m = new SceneManager({ storage: memoryStorage() });
-  const view = m.update(input({ doc: quiet }), local(2026, 9, 30, 20, 0));
+  for (const minute of [10, 20, 30]) {
+    m.update(input({ doc, event: 'turn/start' }), local(2026, 9, 30, 9, minute));
+    m.update(input({ doc, event: 'turn/end' }), local(2026, 9, 30, 9, minute + 1));
+  }
+  const view = m.update(input({ doc }), local(2026, 9, 30, 20, 0));
   assert.equal(view.scene, 'evening');
   assert.equal(view.bubble.key, 'bubble.evening');
+  assert.equal(view.bubble.params.count, 3);
+});
+
+test('a finished subagent is not one of the user\'s conversations', () => {
+  const doc = { tasks: [], schedules: [], settings: { evening_time: '18:30' } };
+  const m = new SceneManager({ storage: memoryStorage() });
+  m.update(input({ doc, event: 'turn/end', internal: true }), local(2026, 9, 30, 10, 0));
+  m.update(input({ doc, event: 'turn/end' }), local(2026, 9, 30, 10, 1));
+  const view = m.update(input({ doc }), local(2026, 9, 30, 20, 0));
   assert.equal(view.bubble.params.count, 1);
+});
+
+test('the finished-conversation tally resets with the day', () => {
+  const doc = { tasks: [], schedules: [], settings: { evening_time: '18:30' } };
+  const m = new SceneManager({ storage: memoryStorage() });
+  m.update(input({ doc, event: 'turn/end' }), local(2026, 9, 30, 9, 1));
+  m.update(input({ doc, event: 'turn/end' }), local(2026, 10, 1, 9, 1));
+  m.update(input({ doc, event: 'turn/end' }), local(2026, 10, 1, 9, 31));
+  const view = m.update(input({ doc }), local(2026, 10, 1, 20, 0));
+  assert.equal(view.bubble.params.count, 2); // only 10/1's two conversations
 });
 
 test('a data error overlays a bubble only when no scene bubble exists, and clears on recovery', () => {
