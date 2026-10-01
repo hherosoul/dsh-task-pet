@@ -87,3 +87,94 @@ test('the pomodoro action toggles its own block', () => {
   assert.equal(pet.breakInput.value, '10');
   assert.ok(pet.positioned > 0, 'every section change must reposition the panel');
 });
+
+test('starting the pomodoro applies the minutes typed in the open settings block', () => {
+  const calls = [];
+  const pet = fakePanel();
+  pet.onTogglePomodoro = (start, minutes) => calls.push({ start, minutes });
+  pet.view = { pomodoro: { workMin: 45, breakMin: 10, running: false } };
+  pet.workInput.value = '30';
+  pet.breakInput.value = '5';
+  pet.pomodoroBlock.hidden = false; // the settings block the user typed into
+  pet.startPomodoro();
+  assert.deepEqual(calls[0], { start: true, minutes: { workMin: 30, breakMin: 5 } });
+});
+
+test('the quick toggle (settings block hidden) runs on the document minutes', () => {
+  const calls = [];
+  const pet = fakePanel();
+  pet.onTogglePomodoro = (start, minutes) => calls.push({ start, minutes });
+  pet.view = { pomodoro: { workMin: 45, breakMin: 10, running: false } };
+  pet.workInput.value = '30'; // stale box from an earlier visit — must not win
+  pet.breakInput.value = '5';
+  pet.pomodoroBlock.hidden = true;
+  pet.startPomodoro();
+  assert.deepEqual(calls[0], { start: true, minutes: { workMin: 45, breakMin: 10 } });
+});
+
+test('an empty settings box falls back to the document minutes, never to zero', () => {
+  const calls = [];
+  const pet = fakePanel();
+  pet.onTogglePomodoro = (start, minutes) => calls.push({ start, minutes });
+  pet.view = { pomodoro: { workMin: 50, breakMin: 15, running: false } };
+  pet.workInput.value = '';
+  pet.breakInput.value = 'abc';
+  pet.pomodoroBlock.hidden = false;
+  pet.startPomodoro();
+  assert.deepEqual(calls[0], { start: true, minutes: { workMin: 50, breakMin: 15 } });
+});
+
+/** The agenda surface: enough of the real DOM contract to run openAgenda /
+ * confirmPreview without a browser — exactly the paths that once threw. */
+function fakeAgenda() {
+  const focused = [];
+  const button = (name) => ({ name, focus() { focused.push(name); } });
+  const pet = Object.assign(Object.create(proto), {
+    translate: (key) => key,
+    button: button('pet'),
+    panel: { hidden: false },
+    panelConfirm: { hidden: true },
+    panelTitle: { textContent: 'panel.title' },
+    panelBody: { append() {} },
+    pomodoroBlock: { hidden: true, contains: () => false },
+    pendingPrompt: null,
+    agenda: {
+      hidden: true,
+      querySelector: (sel) => (sel === '.close' ? pet.closeButton : null),
+    },
+    agendaActions: { hidden: false },
+    agendaConfirm: {
+      hidden: true,
+      querySelector: (sel) => (sel === '.accept' ? pet.acceptButton : null),
+    },
+    closeButton: button('agenda-close'),
+    acceptButton: button('agenda-accept'),
+    opened: 0,
+    confirmVisible: null,
+    focused,
+  });
+  pet.closePanel = () => {};
+  pet.positionAgenda = () => {};
+  pet.syncPopover = () => {};
+  pet.onAgendaOpen = () => { pet.opened += 1; };
+  return pet;
+}
+
+test('opening the agenda focuses its close button without throwing', () => {
+  const pet = fakeAgenda();
+  pet.openAgenda();
+  assert.equal(pet.agenda.hidden, false, 'the list must be open');
+  assert.equal(pet.opened, 1, 'the open hook must run');
+  assert.deepEqual(pet.focused, ['agenda-close'], 'focus lands on the close button');
+});
+
+test('arming the agenda preview focuses the real accept button', () => {
+  const pet = fakeAgenda();
+  pet.confirmPreview(true);
+  assert.equal(pet.agendaActions.hidden, true);
+  assert.equal(pet.agendaConfirm.hidden, false);
+  assert.deepEqual(pet.focused, ['agenda-accept'], 'the .accept button exists in the template');
+  pet.confirmPreview(false);
+  assert.equal(pet.agendaActions.hidden, false);
+  assert.equal(pet.agendaConfirm.hidden, true);
+});

@@ -16,10 +16,11 @@
 
 ## Quickstart
 
-1. 把本目录安装进一个全新 profile（首次使用会初始化 `@deepseek-ai/dsh-base`）：
+1. 把本仓库安装进一个全新 profile（首次使用会初始化 `@deepseek-ai/dsh-base`）。两种方式任选：
 
 ```sh
-dsh plugin --profile demo add /path/to/dsh-task-pet
+dsh plugin --profile demo add github:hherosoul/dsh-task-pet   # 直接从 GitHub 安装
+dsh plugin --profile demo add /path/to/dsh-task-pet           # 或克隆后从本地目录安装
 ```
 
 2. 不启动地确认层存在（期望出现 `# == dsh-task-pet` 层）：
@@ -78,7 +79,7 @@ dsh web --profile demo --no-open      # 去掉 --no-open 让浏览器自动打�
 
 - 小鸟**右下角的番茄图标**：点一下直接用当前设置开始计时（默认 45 / 10 分钟），正在计时时点一下停止。
 - 这是插件唯一的写入路径，且是**窄写入**：只改 `settings.pomodoro`（`POST /task-pet/pomodoro`，仅回环 + 自定义请求头），其余字段原样保留；数据语义的写入方仍然是 agent。
-- 改时长走提示词：右键 →「番茄设置」→ 填充分钟数 → 确认 → 提示词进主输入框 → 由 agent 落盘。
+- 改时长有两条路：右键 →「番茄设置」→ 填好分钟数后点**「开始」**直接生效（窄写入，立即应用你填的数字）；或点**「填入设置」**把提示词交给 agent 落盘（顺带把新时长写进默认设置）。
 
 ## 使用教程页（固定文档）
 

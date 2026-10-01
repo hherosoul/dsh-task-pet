@@ -207,18 +207,23 @@ export class TaskDataStore {
    * the pomodoro settings). It is deliberately narrow — only `settings.pomodoro`
    * changes; every other field is carried over from the current document — so it
    * can never race the agent's full-document writes into losing your data.
+   * The carry-over reads the RAW file, not the normalized snapshot: the contract
+   * promises that unknown keys survive on disk, and a zod-parsed snapshot has
+   * them stripped. A missing/corrupt file falls back to the last good snapshot.
    */
   writePomodoro({ runningSince = null, workMin, breakMin } = {}) {
-    const current = this.doc;
-    const pomodoro = { ...(current?.settings?.pomodoro ?? {}) };
+    let base;
+    try {
+      const raw = JSON.parse(readFileSync(this.file, 'utf8'));
+      base = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+    } catch {
+      base = this.doc;
+    }
+    const pomodoro = { ...(base?.settings?.pomodoro ?? {}) };
     pomodoro.running_since = typeof runningSince === 'string' && runningSince !== '' ? runningSince : null;
     if (workMin !== undefined) pomodoro.work_min = clampInt(workMin, 1, 240, 45);
     if (breakMin !== undefined) pomodoro.break_min = clampInt(breakMin, 1, 240, 10);
-    return this.write({
-      tasks: current?.tasks ?? [],
-      schedules: current?.schedules ?? [],
-      settings: { ...(current?.settings ?? {}), pomodoro },
-    });
+    return this.write({ ...base, settings: { ...(base?.settings ?? {}), pomodoro } });
   }
 
   /**

@@ -177,6 +177,40 @@ test('writePomodoro touches only the pomodoro block and clamps the minutes', () 
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('writePomodoro preserves unknown keys the agent kept on disk', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'taskpet-pomo-raw-'));
+  const file = path.join(dir, 'tasks.json');
+  const store = new TaskDataStore(file);
+  // Unknown keys are tolerated by the contract and promised to survive on disk;
+  // the pomodoro write must merge into the RAW file, not the stripped snapshot.
+  const raw = {
+    tasks: [{ id: 't', title: 'x', status: 'pending', my_note: 'keep me' }],
+    schedules: [],
+    settings: { pet_name: '知知' },
+  };
+  store.write(raw);
+  store.writePomodoro({ runningSince: '2026-10-01T09:00:00+08:00', workMin: 25, breakMin: 5 });
+  const disk = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.equal(disk.tasks[0].my_note, 'keep me', 'unknown task keys must survive a pomodoro write');
+  assert.equal(disk.settings.pomodoro.work_min, 25);
+  assert.equal(disk.settings.pet_name, '知知');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('writePomodoro on a corrupt file falls back to the last good snapshot', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'taskpet-pomo-corr-'));
+  const file = path.join(dir, 'tasks.json');
+  const store = new TaskDataStore(file);
+  store.write({ tasks: [{ id: 't', title: 'safe', status: 'pending' }], schedules: [], settings: {} });
+  fs.writeFileSync(file, '{ not json');
+  store.refresh(); // error recorded, snapshot keeps the last good document
+  store.writePomodoro({ runningSince: '2026-10-01T09:00:00+08:00' });
+  const disk = JSON.parse(fs.readFileSync(file, 'utf8'));
+  assert.equal(disk.tasks[0].title, 'safe');
+  assert.equal(disk.settings.pomodoro.running_since, '2026-10-01T09:00:00+08:00');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('the pomodoro route starts the timer and pushes a frame', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'taskpet-route-'));
   const store = new TaskDataStore(path.join(dir, 'tasks.json'));
