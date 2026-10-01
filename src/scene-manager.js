@@ -11,6 +11,10 @@ import { AGENDA_LIMIT, agendaItems, completedTodayCount, dayKey, dueReminders, e
 export const SCENES = Object.freeze(['morning', 'task-reminder', 'focus', 'break', 'schedule', 'evening']);
 /** Morning scene auto-degrades to standby after this long. */
 export const MORNING_HOLD_MS = 30 * 60_000;
+/** The greeting is the day's first sight of the pet, and only a morning sight:
+ * past this local hour the pet stays in its standby pose instead of chirping
+ * "good morning" at 10:40 just because the page happened to reload. */
+export const MORNING_END_HOUR = 10;
 /** The reminder bubble shows once per reminder, for this window. */
 export const REMINDER_BUBBLE_MS = 10_000;
 /** The reminder pose holds this long, then the scene machine takes over again.
@@ -107,9 +111,17 @@ export class SceneManager {
       d.setHours(18, 30, 0, 0);
       return d.getTime();
     })();
-    if ((input.event === 'startup' || input.event === 'turn-start') && s.morningDate !== today && now < eveningMs) {
+    const morningEndMs = (() => {
+      const d = new Date(now);
+      d.setHours(MORNING_END_HOUR, 0, 0, 0);
+      return d.getTime();
+    })();
+    // Only while it is still morning: a first sight of the pet at 10:40 is not a
+    // "good morning", and the window never spills past the end of the morning.
+    if ((input.event === 'startup' || input.event === 'turn-start')
+      && s.morningDate !== today && now < eveningMs && now < morningEndMs) {
       s.morningDate = today;
-      s.morningUntil = now + MORNING_HOLD_MS;
+      s.morningUntil = Math.min(now + MORNING_HOLD_MS, morningEndMs);
     }
     // The day's first completed turn means work has begun: degrade morning.
     if (input.event === 'turn-end' && s.morningDate === today) s.morningUntil = Math.min(s.morningUntil, now);

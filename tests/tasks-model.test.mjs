@@ -102,22 +102,40 @@ test('expired entries leave the agenda and stop producing reminders', () => {
   assert.deepEqual(dueReminders(doc, now).map((r) => r.taskId), ['ahead']);
 });
 
-test('todayCount counts pending tasks due/reminded today plus schedules today', () => {
+test('todayCount counts what the agenda still shows today', () => {
   const now = local(2026, 9, 30, 10, 0);
   const doc = {
     tasks: [
-      { id: 'a', title: 'due today', status: 'pending', due: iso(local(2026, 9, 30, 18, 0)), remind_at: [] },
-      { id: 'b', title: 'remind today', status: 'pending', remind_at: [iso(local(2026, 9, 30, 9, 0))] },
+      { id: 'a', title: 'due today, still ahead', status: 'pending', due: iso(local(2026, 9, 30, 18, 0)), remind_at: [] },
+      { id: 'b', title: 'reminder still ahead today', status: 'pending', remind_at: [iso(local(2026, 9, 30, 11, 0))] },
       { id: 'c', title: 'due tomorrow', status: 'pending', due: iso(local(2026, 10, 1, 18, 0)), remind_at: [] },
       { id: 'd', title: 'done today', status: 'completed', due: iso(local(2026, 9, 30, 18, 0)), completed_at: iso(local(2026, 9, 30, 11, 0)), remind_at: [] },
+      { id: 'e', title: 'reminder already passed today', status: 'pending', remind_at: [iso(local(2026, 9, 30, 9, 0))] },
     ],
     schedules: [
       { id: 's1', title: 'today', start: iso(local(2026, 9, 30, 14, 0)), end: iso(local(2026, 9, 30, 15, 0)) },
       { id: 's2', title: 'tomorrow', start: iso(local(2026, 10, 1, 14, 0)), end: iso(local(2026, 10, 1, 15, 0)) },
     ],
   };
-  assert.equal(todayCount(doc, now), 3);
+  assert.equal(todayCount(doc, now), 3); // a, b, s1 — e's own moment has already gone
   assert.equal(completedTodayCount(doc, now), 1);
+});
+
+test('todayCount never disagrees with the agenda it is spoken from', () => {
+  const now = local(2026, 10, 1, 10, 40);
+  const doc = {
+    tasks: [
+      // A 09:00 review that is already over: dropped from the agenda, so uncounted.
+      { id: 'past', title: '产品评审会', status: 'pending', due: iso(local(2026, 10, 1, 9, 0)), remind_at: [iso(local(2026, 10, 1, 8, 0))] },
+      // Tomorrow's meeting: its 24h reminder lands today, but the row says 10/2.
+      { id: 'next', title: '客户沟通', status: 'pending', due: iso(local(2026, 10, 2, 14, 0)), remind_at: [iso(local(2026, 10, 1, 14, 0)), iso(local(2026, 10, 2, 13, 0))] },
+    ],
+    schedules: [],
+  };
+  assert.equal(todayCount(doc, now), 0);
+  const rows = agendaItems(doc, now);
+  assert.deepEqual(rows.map((row) => row.id), ['next']);
+  assert.equal(new Date(rows[0].atMs).getDate(), 2);
 });
 
 test('pomodoroSegment derives work/break phases and remaining time from running_since', () => {

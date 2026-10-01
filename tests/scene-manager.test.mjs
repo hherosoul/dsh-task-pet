@@ -39,6 +39,21 @@ test('startup before evening holds the morning scene with a count', () => {
   assert.equal(view.bubble.params.count, 3);
 });
 
+test('the morning greeting only opens while it is still morning', () => {
+  const doc = { tasks: [{ id: 't', title: '写周报', status: 'pending', due: iso(local(2026, 9, 30, 18, 0)), remind_at: [] }], schedules: [], settings: {} };
+  const early = new SceneManager({ storage: memoryStorage() });
+  assert.equal(early.update(input({ doc, event: 'startup' }), local(2026, 9, 30, 8, 30)).scene, 'morning');
+  // 10:40 is no longer a "good morning": the pet stays in its standby pose.
+  const late = new SceneManager({ storage: memoryStorage() });
+  const lateView = late.update(input({ doc, event: 'startup' }), local(2026, 9, 30, 10, 40));
+  assert.equal(lateView.scene, 'schedule');
+  assert.equal(lateView.bubble, null);
+  // …and a window opened late in the morning never spills past the morning.
+  const m = new SceneManager({ storage: memoryStorage() });
+  assert.equal(m.update(input({ doc, event: 'startup' }), local(2026, 9, 30, 9, 50)).scene, 'morning');
+  assert.equal(m.update(input({ doc }), local(2026, 9, 30, 10, 1)).scene, 'schedule');
+});
+
 test('a due reminder outranks everything and wins the click prompt', () => {
   const m = new SceneManager({ storage: memoryStorage() });
   const view = m.update(input({ event: 'startup' }), local(2026, 9, 30, 10, 5));

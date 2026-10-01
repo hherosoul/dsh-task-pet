@@ -14,10 +14,14 @@ function parseIso(iso) {
   return Number.isFinite(ms) ? ms : null;
 }
 
+/** Whether a resolved moment falls on the local day of `nowMs`. */
+export function isSameDay(ms, nowMs, DateCtor = Date) {
+  return Number.isFinite(ms) && dayKey(ms, DateCtor) === dayKey(nowMs, DateCtor);
+}
+
 /** Whether an ISO timestamp falls on the local day of `nowMs`. */
 export function isToday(iso, nowMs, DateCtor = Date) {
-  const ms = parseIso(iso);
-  return ms !== null && dayKey(ms, DateCtor) === dayKey(nowMs, DateCtor);
+  return isSameDay(parseIso(iso), nowMs, DateCtor);
 }
 
 /** Whether an agenda entry is already over: a task's `due` or a schedule's `end`
@@ -49,13 +53,35 @@ export function dueReminders(doc, nowMs) {
   );
 }
 
-/** {N} = 今日待办 + 日程数 (DESIGN §4). A pending task counts when it is due
- * today or carries a reminder today; a schedule counts when it starts today. */
+/**
+ * The moment that puts an entry on the calendar: a task's `due`, else its next
+ * reminder that is still ahead of us; a schedule's `start`. The agenda rows and
+ * the morning count both go through here, so the number the pet says out loud can
+ * never disagree with the list behind the badge.
+ */
+export function entryMoment(entry, kind, nowMs) {
+  if (kind === 'schedule') return parseIso(entry?.start);
+  const due = parseIso(entry?.due);
+  if (due !== null) return due;
+  return (entry?.remind_at ?? [])
+    .map((at) => parseIso(at))
+    .filter((ms) => ms !== null && ms >= nowMs)
+    .sort((a, b) => a - b)[0] ?? null;
+}
+
+/**
+ * {N} = what the agenda would still show for today (DESIGN §4): entries that are
+ * not over yet and whose own moment (due / start / next reminder) falls on the
+ * local today. An entry that already happened is gone from the list, so it must
+ * not be counted either — and a reminder that lands today for something that
+ * happens tomorrow belongs to tomorrow's row, not to today's tally.
+ */
 export function todayCount(doc, nowMs, DateCtor = Date) {
-  const tasks = (doc?.tasks ?? []).filter(
-    (task) => task.status === 'pending' && ((task.due && isToday(task.due, nowMs, DateCtor)) || (task.remind_at ?? []).some((at) => isToday(at, nowMs, DateCtor))),
-  ).length;
-  const schedules = (doc?.schedules ?? []).filter((item) => isToday(item.start, nowMs, DateCtor)).length;
+  const tasks = (doc?.tasks ?? []).filter((task) => task.status === 'pending'
+    && !isExpired(task, nowMs)
+    && isSameDay(entryMoment(task, 'task', nowMs), nowMs, DateCtor)).length;
+  const schedules = (doc?.schedules ?? []).filter((item) => !isExpired(item, nowMs)
+    && isSameDay(entryMoment(item, 'schedule', nowMs), nowMs, DateCtor)).length;
   return tasks + schedules;
 }
 
@@ -127,16 +153,11 @@ export function agendaItems(doc, nowMs, DateCtor = Date) {
   for (const task of doc?.tasks ?? []) {
     if (task.status !== 'pending') continue;
     if (isExpired(task, nowMs)) continue;
-    const due = parseIso(task.due);
-    const nextReminder = (task.remind_at ?? [])
-      .map((at) => parseIso(at))
-      .filter((ms) => ms !== null && ms >= nowMs)
-      .sort((a, b) => a - b)[0] ?? null;
-    items.push({ id: String(task.id), title: String(task.title), kind: 'task', atMs: due ?? nextReminder ?? null });
+    items.push({ id: String(task.id), title: String(task.title), kind: 'task', atMs: entryMoment(task, 'task', nowMs) });
   }
   for (const entry of doc?.schedules ?? []) {
     if (isExpired(entry, nowMs)) continue;
-    items.push({ id: String(entry.id), title: String(entry.title), kind: 'schedule', atMs: parseIso(entry.start) });
+    items.push({ id: String(entry.id), title: String(entry.title), kind: 'schedule', atMs: entryMoment(entry, 'schedule', nowMs) });
   }
   return items.sort((a, b) => {
     if (a.atMs === null && b.atMs === null) return a.title.localeCompare(b.title);
