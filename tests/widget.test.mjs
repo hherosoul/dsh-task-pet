@@ -35,6 +35,24 @@ test('the widget template is balanced and carries the panel blocks', () => {
   }
 });
 
+test('the settings panel shows one section at a time', () => {
+  // Guard against the regression where the pomodoro settings stayed on screen for
+  // every following click: the block's visibility has exactly one owner, and that
+  // owner also owns the panel title, so block and title can never disagree.
+  const writers = widget.match(/this\.pomodoroBlock\.hidden\s*=/g) ?? [];
+  assert.equal(writers.length, 1, `pomodoro visibility must be written in exactly one place, found ${writers.length}`);
+  assert.match(widget, /setPomodoroOpen\(visible\) \{\n\s*this\.pomodoroBlock\.hidden = !visible;/);
+
+  const method = (name) => {
+    const start = widget.indexOf(`  ${name}(`);
+    assert.ok(start > 0, `${name} method missing`);
+    return widget.slice(start, widget.indexOf('\n  }', start));
+  };
+  assert.match(method('closePanel'), /setPomodoroOpen\(false\)/, 'closing the panel must restore the base menu');
+  assert.match(method('togglePomodoro'), /showPanelConfirm\(false\)/, 'opening the settings must dismiss a pending confirmation');
+  assert.match(method('askToFill'), /pomodoroBlock\.contains\(anchor\)/, 'a confirmation from the base menu must put the pomodoro block away');
+});
+
 test('the countdown drain animation matches the ring circumference', () => {
   const css = fs.readFileSync(path.join(root, 'src/pet.css'), 'utf8');
   const widget = fs.readFileSync(path.join(root, 'src/widget.js'), 'utf8');
