@@ -52,7 +52,7 @@ export const TASKS_DOCUMENT_SCHEMA = z.object({
         id: z.string().min(1).max(128),
         title: z.string().min(1).max(300),
         start: isoString,
-        end: isoString,
+        end: isoString.optional(),
         note: z.string().max(500).optional(),
       }),
     )

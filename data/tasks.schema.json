@@ -116,8 +116,7 @@
         "required": [
           "id",
           "title",
-          "start",
-          "end"
+          "start"
         ]
       }
     },

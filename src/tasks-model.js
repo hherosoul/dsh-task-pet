@@ -24,12 +24,16 @@ export function isToday(iso, nowMs, DateCtor = Date) {
   return isSameDay(parseIso(iso), nowMs, DateCtor);
 }
 
-/** Whether an agenda entry is already over: a task's `due` or a schedule's `end`
- * has passed. Expired entries leave the badge and stop producing reminders — a
- * reminder that could only be delivered after the thing already happened is
- * noise, not help. Entries with no moment at all (an open todo) never expire. */
+/** Whether an agenda entry is already over. The moment is the entry's own:
+ * a task's `due` (for a meeting, its start time — whether the meeting is still
+ * running is not this plugin's business; the reminder already did its job), and a
+ * schedule's `start`. A schedule's `end` is only consulted when it carries one,
+ * because that is an explicit deadline: "通常的日程只看开始时间".
+ * Expired entries leave the badge and stop producing reminders — a reminder that
+ * could only be delivered after the thing already happened is noise, not help.
+ * Entries with no moment at all (an open todo) never expire. */
 export function isExpired(entry, nowMs) {
-  const moment = parseIso(entry?.end ?? entry?.due);
+  const moment = parseIso(entry?.end ?? entry?.due ?? entry?.start);
   return moment !== null && moment < nowMs;
 }
 

@@ -79,11 +79,16 @@ test('whenLabel always carries month, day and clock time', () => {
   assert.equal(whenLabel(null), '');
 });
 
-test('isExpired retires a task at its due time and a schedule at its end', () => {
+test('isExpired retires a task at its due time and a schedule at its start', () => {
   const now = local(2026, 9, 30, 12, 0);
   assert.equal(isExpired({ due: iso(local(2026, 9, 30, 11, 0)) }, now), true);
   assert.equal(isExpired({ due: iso(local(2026, 9, 30, 13, 0)) }, now), false);
-  assert.equal(isExpired({ end: iso(local(2026, 9, 30, 11, 0)) }, now), true);
+  // 通常的日程只看开始时间：没有 end 的日程，到点就算过。
+  assert.equal(isExpired({ start: iso(local(2026, 9, 30, 11, 30)) }, now), true);
+  assert.equal(isExpired({ start: iso(local(2026, 9, 30, 12, 30)) }, now), false);
+  // 写了 end 就是明确的 deadline，那时按 end 判：会开着的时候它还在。
+  assert.equal(isExpired({ start: iso(local(2026, 9, 30, 9, 30)), end: iso(local(2026, 9, 30, 13, 0)) }, now), false);
+  assert.equal(isExpired({ start: iso(local(2026, 9, 30, 9, 0)), end: iso(local(2026, 9, 30, 10, 0)) }, now), true);
   // An open todo with no moment of its own never expires.
   assert.equal(isExpired({ remind_at: [] }, now), false);
 });

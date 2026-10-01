@@ -67,7 +67,7 @@ footer{margin-top:56px;padding-top:20px;border-top:1px solid var(--line);color:v
   <h2><i>02</i>六个场景</h2>
   <p class="sub">THE SIX SCENES</p>
   <div class="grid">
-    <div class="scene"><img src="{{THUMB:morning}}" alt="晨间规划"><strong>晨间规划</strong><small>DSH 启动或当天第一次交互。报今天有几件事。</small></div>
+    <div class="scene"><img src="{{THUMB:morning}}" alt="晨间规划"><strong>晨间规划</strong><small>当天第一次启动/交互，且仍在上午（10:00 前）。报今天还剩几件事。</small></div>
     <div class="scene"><img src="{{THUMB:task-reminder}}" alt="任务提醒"><strong>任务提醒</strong><small>某个提醒到点。跳一下、说该做什么，然后把场景交还。</small></div>
     <div class="scene"><img src="{{THUMB:focus}}" alt="专注陪伴"><strong>专注陪伴</strong><small>会话执行中，或番茄钟工作段。左上角带倒计时环。</small></div>
     <div class="scene"><img src="{{THUMB:break}}" alt="休息提醒"><strong>休息提醒</strong><small>番茄钟工作段结束，或连续专注满 50 分钟。</small></div>
@@ -84,7 +84,7 @@ footer{margin-top:56px;padding-top:20px;border-top:1px solid var(--line);color:v
     <li><b>说的是事情本身</b><span>气泡报的是<strong>那件事</strong>的时刻和它所在的那一天，不是你收到提醒的钟点：明天 14:00 的会，提前 24 小时的提醒会说「<strong>明天</strong> 14:00 有客户沟通」，不会说成今天 14:00。</span></li>
     <li><b>1 秒精度</b><span>App 开着时，桌宠每秒比对一次时间，到点 1 秒内响。</span></li>
     <li><b>没开也补</b><span>App 关着、电脑睡了、长时间离线——到点的提醒会在下次启动时补一次，并如实说明「已经过时间了」。</span></li>
-    <li><b>过时不补</b><span>已经过了任务 <code>due</code> / 日程 <code>end</code> 的事不再补提醒，也不再重复催促。</span></li>
+    <li><b>过时不补</b><span>已经过了任务 <code>due</code> / 日程 <code>start</code> 的事不再补提醒，也不再重复催促；日程写了 <code>end</code> 就是明确的 deadline，那时按 <code>end</code> 判。会议不必管"开完没有"——提醒已经完成使命。</span></li>
     <li><b>提醒≠常驻</b><span>提醒只短暂占据姿态（气泡 10 秒、姿态 60 秒），随后场景机自动交还。没看过的那条会留在角标上。</span></li>
   </ul></div>
 </section>
@@ -94,8 +94,9 @@ footer{margin-top:56px;padding-top:20px;border-top:1px solid var(--line);color:v
   <p class="sub">THE NUMBER ON ITS HEAD</p>
   <div class="card">
     <table>
-      <tr><th>数字是什么</th><td><strong>还没过时</strong>的条目数：任务 <code>due</code> 未过、日程 <code>end</code> 未过。和"今天"无关——加了下周的日程，数字现在就 +1。</td></tr>
+      <tr><th>数字是什么</th><td><strong>还没过时</strong>的条目数：任务 <code>due</code> 未过、日程 <code>start</code> 未过（日程写了 <code>end</code> 才按 <code>end</code> 判——那是明确的 deadline）。和"今天"无关——加了下周的日程，数字现在就 +1。</td></tr>
       <tr><th>什么时候变小</th><td>时刻一过自动减掉，同时该条不再产生提醒；把事标成完成也会立刻减。</td></tr>
+      <tr><th>和晚间数字的区别</th><td>这里的数字是<strong>日程</strong>口径（还没过时的条目）；晚上那句「今天做完了 N 件事」是<strong>DSH</strong> 口径——今天完成了多少轮对话。两者互不影响。</td></tr>
       <tr><th>点开是什么</th><td>日程列表：时间（带月/日）、标题、是待办还是日程。最多显示 5 条，超出滚动。</td></tr>
       <tr><th>底部的「详情」</th><td>先请你确认，确认后把整段预览提示词填入主输入框<strong>并覆盖原有内容</strong>——这是唯一会覆盖你输入的情况。角标和列表只有<strong>还没过时</strong>的条目；<strong>过去一个月</strong>（含已过期、已完成）和全部未来事件都由 agent 在这次预览里展开，并逐条标注「待办 / 过期」。</td></tr>
     </table>
@@ -130,6 +131,8 @@ footer{margin-top:56px;padding-top:20px;border-top:1px solid var(--line);color:v
   <div class="card">
     <details><summary>数字一直是 0？</summary><p>说明数据里没有未过时的事；或者浏览器还在跑旧的客户端包——刷新页面，仍不行就重启 App。</p></details>
     <details><summary>提醒没响？</summary><p>当时 App 没开着（可在下次启动时补），或者那一条已经过时了。也可能输入框里已有你未发送的内容——注入会被跳过以保护你的编辑，「详情」那条例外。</p></details>
+    <details><summary>早上没说早安？</summary><p>上午 10:00 之后不再问候；当天已经问候过、或当天第一轮对话已经做完（早安窗口会提前收起）时也不会再说。</p></details>
+    <details><summary>晚间数字是 0 或很小？</summary><p>它只数<strong>今天在 DSH 完成的对话轮数</strong>，而且只统计 App 开着的时候；子任务（子 agent）的内部轮次不算。日程里的任务完成度不影响它。</p></details>
     <details><summary>小鸟跑到奇怪的位置了？</summary><p>它不可能跑出窗口，位置始终被夹在可视区域内。拖动即可。</p></details>
     <details><summary>想让桌宠安静一点？</summary><p>设置里关掉「动画」，或直接「隐藏」；隐藏后右下角会有「唤回知知」。</p></details>
     <details><summary>演示数据怎么清？</summary><p>跟 agent 说「清掉演示数据」，它会从 tasks.json 里删掉。</p></details>

@@ -65,6 +65,14 @@ test('data/tasks.schema.json mirrors the zod input schema exactly', () => {
   assert.deepEqual(schemaBody, jsonSchema);
 });
 
+test('a schedule may omit its end: the start alone is the moment', () => {
+  const doc = remote.parseTasksDocument({
+    schedules: [{ id: 's1', title: '只占时间轴的日程', start: '2026-10-01T14:00:00+08:00' }],
+  });
+  assert.equal(doc.schedules.length, 1);
+  assert.equal(doc.schedules[0].end, undefined);
+});
+
 test('the shipped example document parses cleanly', () => {
   const example = JSON.parse(fs.readFileSync(path.join(root, 'data/tasks.example.json'), 'utf8'));
   const doc = remote.parseTasksDocument(example);

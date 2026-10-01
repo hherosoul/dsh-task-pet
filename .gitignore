@@ -4,3 +4,8 @@ dist/
 *.tgz
 *.log
 .DS_Store
+
+# Local-only: machine-specific evidence and dev overlays never ship.
+qa/
+dev/
+data/tasks.json
