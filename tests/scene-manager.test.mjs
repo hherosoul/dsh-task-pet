@@ -55,6 +55,23 @@ test('the morning greeting only opens while it is still morning', () => {
   assert.equal(m.update(input({ doc }), local(2026, 9, 30, 10, 1)).scene, 'schedule');
 });
 
+test('the host frame spelling of a turn boundary still drives the machine', () => {
+  const m = new SceneManager({ storage: memoryStorage() });
+  const t = local(2026, 9, 30, 9, 0);
+  assert.equal(m.update(input({ event: 'startup' }), t).scene, 'morning');
+  // 'turn/end' is what the host actually streams: the day's first completed turn
+  // has to close the morning window instead of holding it for the full 30 minutes.
+  assert.equal(m.update(input({ event: 'turn/end' }), t + 60_000).scene, 'schedule');
+});
+
+test('after 17:00 the evening review comes once the day\'s sessions are over', () => {
+  const doc = { tasks: [], schedules: [], settings: { evening_time: '18:30' } };
+  const m = new SceneManager({ storage: memoryStorage() });
+  const t = local(2026, 9, 30, 17, 10);
+  assert.equal(m.update(input({ doc, sessionRunning: true, event: 'turn/start' }), t).scene, 'focus');
+  assert.equal(m.update(input({ doc, event: 'turn/end' }), t + 60_000).scene, 'evening');
+});
+
 test('a due reminder outranks everything and wins the click prompt', () => {
   const m = new SceneManager({ storage: memoryStorage() });
   const view = m.update(input({ event: 'startup' }), local(2026, 9, 30, 10, 5));

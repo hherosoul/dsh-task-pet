@@ -45,6 +45,11 @@ export function memoryStorage() {
 
 const STATE_KEY = 'scene:v1';
 const reminderKey = (reminder) => `${reminder.taskId}|${reminder.at}`;
+/** The host streams boundaries as 'turn/start' / 'turn/end'; this machine speaks
+ * 'turn-start' / 'turn-end'. Normalise once, here — the mismatch used to mean the
+ * day's first completed turn never closed the morning window, and the "after 17:00,
+ * once the day's sessions are over" evening trigger never fired. */
+const TURN_EVENTS = Object.freeze({ 'turn/start': 'turn-start', 'turn/end': 'turn-end' });
 
 /**
  * What the pet says when a reminder fires. It announces the thing on its own day
@@ -127,6 +132,7 @@ export class SceneManager {
     const doc = input.doc ?? null;
     const today = dayKey(now);
     const s = this.state;
+    const event = TURN_EVENTS[input.event] ?? input.event;
 
     // Morning planning: DSH startup / the day's first interaction, before evening.
     const eveningMs = eveningTimeMs(doc, now) ?? (() => {
@@ -141,14 +147,14 @@ export class SceneManager {
     })();
     // Only while it is still morning: a first sight of the pet at 10:40 is not a
     // "good morning", and the window never spills past the end of the morning.
-    if ((input.event === 'startup' || input.event === 'turn-start')
+    if ((event === 'startup' || event === 'turn-start')
       && s.morningDate !== today && now < eveningMs && now < morningEndMs) {
       s.morningDate = today;
       s.morningUntil = Math.min(now + MORNING_HOLD_MS, morningEndMs);
     }
     // The day's first completed turn means work has begun: degrade morning.
-    if (input.event === 'turn-end' && s.morningDate === today) s.morningUntil = Math.min(s.morningUntil, now);
-    if (input.event === 'turn-start') s.lastTurnDate = today;
+    if (event === 'turn-end' && s.morningDate === today) s.morningUntil = Math.min(s.morningUntil, now);
+    if (event === 'turn-start') s.lastTurnDate = today;
 
     // Evening review: the configured time, or all sessions ended after 17:00.
     const running = input.sessionRunning === true;
